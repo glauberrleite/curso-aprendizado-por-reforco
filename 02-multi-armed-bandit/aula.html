@@ -1,0 +1,2639 @@
+<meta charset="utf-8">
+<title>Multi-armed bandits — o dilema puro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ============================================================
+   PPGI071 — Aprendizado por Reforço
+   Aula 02 · Multi-armed bandits
+   Registro visual: caderno de laboratório / instrumentação.
+   Acentos com significado fixo:
+     --agente     (violeta) = agente, ação, política
+     --ambiente   (teal)    = ambiente, estado, transição
+     --recompensa (âmbar)   = recompensa, retorno, valor
+     --alerta     (vermelho)= limitação, armadilha, erro comum
+
+   Dois modos sobre o MESMO DOM:
+     documento     — .slide é display:contents (some do layout)
+     apresentação  — .slide vira slide de tela cheia
+
+   ESCALA NA APRESENTAÇÃO
+   No modo apresentação a fonte da RAIZ cresce com a viewport, então
+   todo tamanho em rem (botões, rótulos, leituras das demos) acompanha.
+   --ps é o zoom manual (A− / A+).
+   ============================================================ */
+
+:root {
+  --paper:      #f2f4f6;
+  --surface:    #ffffff;
+  --surface-2:  #e9ecf0;
+  --ink:        #141a20;
+  --ink-soft:   #46525e;
+  --ink-mute:   #6d7a88;
+  --rule:       #d5dae1;
+  --rule-soft:  #e5e8ed;
+
+  --agente:     #5645b8;
+  --agente-bg:  #e7e4f7;
+  --ambiente:   #0d6e7d;
+  --ambiente-bg:#dfeef0;
+  --recompensa: #a8620a;
+  --recompensa-bg:#f6ecdd;
+  --alerta:     #9d332e;
+  --alerta-bg:  #f7e7e5;
+
+  --serif: ui-serif, "Iowan Old Style", Charter, "Bitstream Charter", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans:  ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono:  ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --measure: 68ch;
+  --rail: 15rem;
+  --ps: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#0e1216; --surface:#161c22; --surface-2:#1e262e;
+    --ink:#e4e9ee; --ink-soft:#b4c0ca; --ink-mute:#8593a1;
+    --rule:#28323c; --rule-soft:#1d252d;
+    --agente:#a99cf0; --agente-bg:#211d3a;
+    --ambiente:#55c0d2; --ambiente-bg:#102a30;
+    --recompensa:#e2a355; --recompensa-bg:#2a2013;
+    --alerta:#e2867d; --alerta-bg:#2c1817;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:#0e1216; --surface:#161c22; --surface-2:#1e262e;
+  --ink:#e4e9ee; --ink-soft:#b4c0ca; --ink-mute:#8593a1;
+  --rule:#28323c; --rule-soft:#1d252d;
+  --agente:#a99cf0; --agente-bg:#211d3a;
+  --ambiente:#55c0d2; --ambiente-bg:#102a30;
+  --recompensa:#e2a355; --recompensa-bg:#2a2013;
+  --alerta:#e2867d; --alerta-bg:#2c1817;
+}
+:root[data-theme="light"] {
+  --paper:#f2f4f6; --surface:#ffffff; --surface-2:#e9ecf0;
+  --ink:#141a20; --ink-soft:#46525e; --ink-mute:#6d7a88;
+  --rule:#d5dae1; --rule-soft:#e5e8ed;
+  --agente:#5645b8; --agente-bg:#e7e4f7;
+  --ambiente:#0d6e7d; --ambiente-bg:#dfeef0;
+  --recompensa:#a8620a; --recompensa-bg:#f6ecdd;
+  --alerta:#9d332e; --alerta-bg:#f7e7e5;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- estrutura ---------- */
+
+.shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); }
+
+.rail {
+  position: sticky; top: 0; height: 100vh;
+  padding: 2rem 1.25rem 2rem 1.75rem;
+  border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column; gap: 1.2rem;
+  overflow-y: auto;
+}
+.rail-brand {
+  font-family: var(--mono); font-size: .7rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-mute); line-height: 1.5;
+}
+.rail-brand b { color: var(--ink); font-weight: 600; display: block; letter-spacing: .1em; }
+
+.rail nav { display: flex; flex-direction: column; }
+.rail nav a {
+  display: grid; grid-template-columns: 1.9rem 1fr; gap: .45rem; align-items: baseline;
+  padding: .3rem 0; text-decoration: none; color: var(--ink-soft);
+  font-family: var(--sans); font-size: .78rem; line-height: 1.25;
+  border-top: 1px solid var(--rule-soft);
+}
+.rail nav a:first-child { border-top: 0; }
+.rail nav a .n { font-family: var(--mono); font-size: .66rem; color: var(--ink-mute); }
+.rail nav a:hover { color: var(--ink); }
+.rail nav a.on, .rail nav a.on .n { color: var(--agente); }
+
+.rail-foot {
+  margin-top: auto; font-family: var(--sans); font-size: .75rem;
+  color: var(--ink-mute); display: flex; flex-direction: column; gap: .5rem;
+}
+.rail-btn {
+  font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+  background: transparent; color: var(--ink-mute); border: 1px solid var(--rule);
+  padding: .45rem .6rem; cursor: pointer; text-align: left; text-decoration: none;
+}
+.rail-btn:hover { color: var(--ink); border-color: var(--ink-mute); }
+.rail-btn.accent { color: var(--agente); border-color: var(--agente); }
+.rail-btn.accent:hover { background: var(--agente); color: var(--paper); }
+
+main { padding: 0 0 8rem; min-width: 0; }
+.wrap { max-width: var(--measure); padding: 0 2.5rem; }
+.slide { display: contents; }
+
+/* ---------- capa ---------- */
+
+.hero {
+  border-bottom: 1px solid var(--rule);
+  padding: 4.5rem 0 2.5rem;
+  background-image:
+    linear-gradient(to right, var(--rule-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--rule-soft) 1px, transparent 1px);
+  background-size: 28px 28px; background-position: -1px -1px;
+}
+.eyebrow {
+  font-family: var(--mono); font-size: .7rem; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ink-mute);
+}
+h1 {
+  font-size: clamp(2.1rem, 4.4vw, 3.15rem); line-height: 1.08; font-weight: 600;
+  letter-spacing: -0.018em; margin: .7rem 0 0; text-wrap: balance; max-width: 20ch;
+}
+h1 em { font-style: italic; color: var(--agente); }
+.dek { margin: 1.1rem 0 0; font-size: 1.15rem; color: var(--ink-soft); max-width: 52ch; }
+
+.hero-fig { margin-top: 2.2rem; }
+.hero-fig canvas {
+  display: block; width: 100%; height: 210px;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+}
+.hero-cap {
+  margin-top: .55rem; font-family: var(--sans); font-size: .78rem;
+  color: var(--ink-mute); display: flex; gap: 1.4rem; flex-wrap: wrap;
+}
+.hero-cap span::before {
+  content: ""; display: inline-block; width: 1.5rem; height: 0;
+  border-top: 2px solid currentColor; vertical-align: middle; margin-right: .45rem;
+}
+.hero-cap .k-age { color: var(--agente); }
+.hero-cap .k-amb { color: var(--ambiente); }
+.hero-cap .k-rec { color: var(--recompensa); }
+
+/* ---------- títulos de seção ---------- */
+
+.sec-head { margin: 3.4rem 0 1.4rem; }
+.sec-head .n {
+  font-family: var(--mono); font-size: .7rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-mute);
+}
+h2 {
+  font-size: clamp(1.55rem, 2.6vw, 2rem); line-height: 1.15; font-weight: 600;
+  letter-spacing: -0.012em; margin: .35rem 0 0; text-wrap: balance;
+}
+.sec-head .sub {
+  display: block; margin-top: .4rem; font-family: var(--sans);
+  font-size: .88rem; color: var(--ink-mute); max-width: 54ch;
+}
+h3 {
+  font-family: var(--sans); font-size: .95rem; font-weight: 650;
+  letter-spacing: .01em; margin: 2rem 0 .6rem;
+}
+p { margin: 0 0 1.05rem; }
+ul, ol { margin: 0 0 1.05rem; padding-left: 1.25rem; }
+li { margin: 0 0 .4rem; }
+a { color: var(--agente); text-underline-offset: 2px; }
+strong { font-weight: 650; }
+code { font-family: var(--mono); font-size: .9em; background: var(--surface-2); padding: .05em .3em; }
+:focus-visible { outline: 2px solid var(--agente); outline-offset: 2px; }
+
+/* ---------- definições, citações, avisos ---------- */
+
+.defn {
+  border-left: 2px solid var(--agente); background: var(--agente-bg);
+  padding: .95rem 1.2rem; margin: 0 0 1.1rem;
+}
+.defn .lab {
+  display: block; font-family: var(--mono); font-size: .66rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--agente); margin-bottom: .3rem;
+}
+.defn p { margin: 0 0 .7rem; }
+.defn p:last-child { margin-bottom: 0; }
+.defn ul { margin: .5rem 0 0; }
+.defn.amb { border-left-color: var(--ambiente); background: var(--ambiente-bg); }
+.defn.amb .lab { color: var(--ambiente); }
+.defn.rec { border-left-color: var(--recompensa); background: var(--recompensa-bg); }
+.defn.rec .lab { color: var(--recompensa); }
+
+blockquote {
+  margin: 0 0 1.1rem; padding: 0 0 0 1.2rem;
+  border-left: 1px solid var(--rule); color: var(--ink-soft);
+}
+blockquote cite {
+  display: block; margin-top: .5rem; font-style: normal;
+  font-family: var(--sans); font-size: .78rem; color: var(--ink-mute);
+}
+
+.note {
+  border: 1px solid var(--rule); border-left: 2px solid var(--ink-mute);
+  padding: .8rem 1.1rem; margin: 0 0 1.1rem; background: var(--surface);
+}
+.note.problema { border-left-color: var(--alerta); background: var(--alerta-bg); }
+.note.problema .lab { color: var(--alerta); }
+.note .lab {
+  display: block; font-family: var(--mono); font-size: .66rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-mute); margin-bottom: .3rem;
+}
+.note p { margin: 0 0 .55rem; }
+.note p:last-child { margin-bottom: 0; }
+
+/* ---------- matemática ---------- */
+
+.eq {
+  font-family: var(--serif); font-size: 1.2rem; line-height: 1.35;
+  text-align: center; margin: 1.4rem 0; overflow-x: auto; padding: .35rem 0;
+}
+.eq small { display: block; font-family: var(--sans); font-size: .72rem; color: var(--ink-mute); margin-top: .45rem; }
+.v { font-style: italic; }
+.frac {
+  display: inline-flex; flex-direction: column; vertical-align: middle;
+  text-align: center; margin: 0 .18em;
+}
+.frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 .4em .12em; }
+.frac > span:last-child { padding: .12em .4em 0; }
+.sum { font-size: 1.35em; vertical-align: -0.22em; line-height: .8; margin-right: .12em; }
+.op-age { color: var(--agente); }
+.op-amb { color: var(--ambiente); }
+.op-rec { color: var(--recompensa); }
+
+/* ---------- "expandir" (detalhe que não cabe projetado) ---------- */
+
+.mais {
+  border: 1px solid var(--rule); border-left: 2px solid var(--ink-mute);
+  background: var(--surface); margin: 0 0 1.1rem;
+}
+.mais > summary {
+  cursor: pointer; list-style: none; padding: .5rem .9rem;
+  font-family: var(--sans); font-size: .78rem; font-weight: 600;
+  color: var(--ink-soft); display: flex; align-items: center; gap: .5rem;
+}
+.mais > summary::-webkit-details-marker { display: none; }
+.mais > summary::before {
+  content: "+"; font-family: var(--mono); font-size: 1rem; line-height: 1;
+  color: var(--agente); width: .7rem; text-align: center;
+}
+.mais[open] > summary::before { content: "−"; }
+.mais > summary:hover { color: var(--ink); }
+.mais .corpo { padding: .1rem .9rem .75rem 2.1rem; font-size: .95rem; color: var(--ink-soft); }
+.mais .corpo > :last-child { margin-bottom: 0; }
+.mais .corpo p { margin-bottom: .6rem; }
+.mais .corpo ul { margin-bottom: .6rem; }
+
+/* duas colunas de bullets curtos */
+.duo-lista { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0 1.6rem; }
+.duo-lista ul { margin-bottom: .4rem; }
+
+/* ---------- demos ---------- */
+
+.demo { border: 1px solid var(--rule); background: var(--surface); margin: 1.3rem 0; }
+.demo-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  flex-wrap: wrap; padding: .7rem 1.1rem;
+  border-bottom: 1px solid var(--rule); background: var(--surface-2);
+}
+.demo-head .t { font-family: var(--sans); font-size: .78rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+.demo-head .h { font-family: var(--sans); font-size: .76rem; color: var(--ink-mute); }
+.demo-body { padding: 1.1rem; }
+
+.ctl { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; margin-bottom: .9rem; }
+
+button.b {
+  font-family: var(--sans); font-size: .8rem; font-weight: 550; padding: .42rem .85rem;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer;
+}
+button.b:hover { border-color: var(--ink-mute); }
+button.b.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+button.b:disabled { opacity: .45; cursor: default; }
+
+.seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--rule); }
+.seg button {
+  font-family: var(--sans); font-size: .78rem; padding: .4rem .8rem;
+  border: 0; border-left: 1px solid var(--rule);
+  background: var(--surface); color: var(--ink-soft); cursor: pointer;
+}
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.readout {
+  display: flex; gap: 1.8rem; flex-wrap: wrap;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .82rem;
+  margin-top: .9rem; padding-top: .8rem; border-top: 1px solid var(--rule-soft);
+}
+.readout div { display: flex; flex-direction: column; gap: .15rem; }
+.readout .k { font-size: .64rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+.readout .val { font-size: 1.15rem; }
+.readout .val.age { color: var(--agente); }
+.readout .val.amb { color: var(--ambiente); }
+.readout .val.rec { color: var(--recompensa); }
+.readout .val.ale { color: var(--alerta); }
+
+canvas.plot { display: block; width: 100%; height: 250px; touch-action: none; }
+canvas.plot.curto { height: 170px; }
+canvas.plot.alto { height: 300px; }
+
+.sliders { display: flex; flex-direction: column; gap: .55rem; margin-bottom: .9rem; }
+.sld { display: grid; grid-template-columns: 12rem 1fr 4.6rem; gap: .6rem; align-items: center; }
+.sld > label { font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
+.sld > output {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: .85rem; color: var(--agente); text-align: right;
+}
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 1.05rem;
+  background: transparent; cursor: pointer; margin: 0;
+}
+input[type="range"]::-webkit-slider-runnable-track { height: .3rem; background: var(--rule); border: 0; }
+input[type="range"]::-moz-range-track { height: .3rem; background: var(--rule); border: 0; }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: .95rem; height: .95rem; margin-top: -.33rem;
+  background: var(--agente); border: 0; border-radius: 50%;
+}
+input[type="range"]::-moz-range-thumb {
+  width: .95rem; height: .95rem; background: var(--agente); border: 0; border-radius: 50%;
+}
+label.inl { font-family: var(--sans); font-size: .82rem; color: var(--ink-soft); display: inline-flex; align-items: center; gap: .4rem; }
+
+.verdict { font-family: var(--sans); font-size: .82rem; margin-top: .8rem; padding: .5rem .7rem; border-left: 2px solid; }
+.verdict.ok { color: var(--ambiente); border-color: var(--ambiente); background: var(--ambiente-bg); }
+.verdict.rec { color: var(--recompensa); border-color: var(--recompensa); background: var(--recompensa-bg); }
+.verdict.bad { color: var(--alerta); border-color: var(--alerta); background: var(--alerta-bg); }
+
+/* trajetória (fita de S, A, R) */
+.traj {
+  font-family: var(--mono); font-size: .8rem; line-height: 1.9;
+  border: 1px solid var(--rule-soft); background: var(--surface-2);
+  padding: .6rem .7rem; margin-top: .9rem; max-height: 7.5rem; overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.traj .s { color: var(--ambiente); }
+.traj .a { color: var(--agente); }
+.traj .r { color: var(--recompensa); }
+.traj .t0 { color: var(--ink-mute); }
+
+/* barras de comparação */
+.bar-wrap { margin-top: .9rem; }
+.bar-row {
+  display: grid; grid-template-columns: 9.5rem 1fr 5.4rem; gap: .6rem; align-items: center;
+  font-family: var(--sans); font-size: .78rem; color: var(--ink-soft); margin-bottom: .45rem;
+}
+.bar-row .bar { height: .85rem; background: var(--surface-2); position: relative; }
+.bar-row .bar i { display: block; height: 100%; background: var(--ink-mute); transition: width .12s linear; }
+.bar-row.win .bar i { background: var(--recompensa); }
+.bar-row .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); }
+
+/* tabuleiro de valores (jogo da velha) */
+.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--rule); border: 1px solid var(--rule); max-width: 15rem; }
+.board div {
+  aspect-ratio: 1; background: var(--surface); display: grid; place-items: center;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .95rem;
+}
+.board div span { position: relative; z-index: 1; }
+.board div { position: relative; }
+.board div::before {
+  content: ""; position: absolute; inset: 0; background: var(--recompensa);
+  opacity: var(--fill, 0);
+}
+.board-wrap { display: grid; grid-template-columns: 15rem 1fr; gap: 1.2rem; align-items: center; }
+@media (max-width: 40rem) { .board-wrap { grid-template-columns: 1fr; } }
+
+/* ---------- exercícios ---------- */
+
+.ex {
+  border: 1px solid var(--rule); border-left: 2px solid var(--recompensa);
+  padding: .95rem 1.1rem; margin: 0 0 .9rem; background: var(--surface);
+}
+.ex .lab {
+  font-family: var(--mono); font-size: .66rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--recompensa); display: block; margin-bottom: .35rem;
+}
+.ex p { margin: 0 0 .8rem; }
+.ex .sol { margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--rule-soft); }
+.ex .sol[hidden] { display: none; }
+.ex .sol p:last-child { margin-bottom: 0; }
+.ex .sol .res { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.15rem; color: var(--recompensa); }
+
+/* ---------- figuras e tabelas ---------- */
+
+figure { margin: 1.3rem 0; }
+figure img {
+  display: block; width: 100%; height: auto;
+  border: 1px solid var(--rule); background: #fff;
+}
+figcaption { font-family: var(--sans); font-size: .78rem; color: var(--ink-mute); margin-top: .5rem; }
+
+.tri { width: 100%; border-collapse: collapse; margin: 1.2rem 0; }
+.tri th, .tri td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.tri th {
+  font-family: var(--sans); font-size: .7rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-mute); font-weight: 600;
+}
+.tri td { font-family: var(--sans); font-size: .85rem; }
+.tri td.p { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--agente); font-size: 1.02rem; }
+.tri td.q { font-family: var(--mono); font-size: .88rem; color: var(--ink-soft); }
+.tbl-scroll { overflow-x: auto; }
+
+.cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1.2rem; }
+
+/* linha do tempo (história) */
+.tl { border-left: 1px solid var(--rule); padding-left: 1.1rem; margin: 1.2rem 0; }
+.tl .it { position: relative; padding: 0 0 1rem; font-family: var(--sans); font-size: .88rem; }
+.tl .it::before {
+  content: ""; position: absolute; left: -1.42rem; top: .45rem;
+  width: .5rem; height: .5rem; background: var(--agente);
+}
+.tl .it b { font-family: var(--mono); font-size: .8rem; color: var(--agente); margin-right: .5rem; }
+
+/* ============================================================
+   MODO APRESENTAÇÃO
+   ============================================================ */
+
+.hud { display: none; }
+
+:root[data-mode="present"] { font-size: calc(clamp(15px, 1.45vw, 30px) * var(--ps)); }
+
+:root[data-mode="present"] body { overflow: hidden; font-size: 1.12rem; line-height: 1.5; }
+:root[data-mode="present"] .rail { display: none; }
+:root[data-mode="present"] .shell { display: block; }
+:root[data-mode="present"] main { padding: 0; }
+:root[data-mode="present"] section,
+:root[data-mode="present"] .wrap,
+:root[data-mode="present"] .hero { display: contents; }
+
+:root[data-mode="present"] .slide { display: none; }
+:root[data-mode="present"] .slide.on {
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: .7rem; position: fixed; inset: 0;
+  padding: 1.6rem clamp(1rem, 4vw, 4rem) 2.9rem;
+  overflow-y: auto; background: var(--paper);
+}
+:root[data-mode="present"] .defn,
+:root[data-mode="present"] .note,
+:root[data-mode="present"] .ex,
+:root[data-mode="present"] .mais,
+:root[data-mode="present"] blockquote { margin-bottom: 0; }
+:root[data-mode="present"] li { margin-bottom: .5rem; }
+:root[data-mode="present"] .slide.on > * { width: 100%; max-width: 54rem; }
+:root[data-mode="present"] .slide.on > .sec-head { margin: 0 0 .2rem; }
+
+:root[data-mode="present"] h1 { font-size: 3rem; max-width: 22ch; }
+:root[data-mode="present"] h2 { font-size: 2rem; }
+:root[data-mode="present"] h3 { margin-top: 0; }
+:root[data-mode="present"] .dek { font-size: 1.35rem; max-width: 44ch; }
+:root[data-mode="present"] .eq { font-size: 1.6rem; margin: .9rem 0; }
+:root[data-mode="present"] canvas.plot { height: clamp(190px, 34vh, 460px); }
+:root[data-mode="present"] canvas.plot.curto { height: clamp(140px, 22vh, 300px); }
+:root[data-mode="present"] .hero-fig canvas { height: clamp(140px, 24vh, 340px); }
+:root[data-mode="present"] figure img { max-height: 46vh; object-fit: contain; }
+:root[data-mode="present"] .sliders { gap: .35rem; margin-bottom: .6rem; }
+:root[data-mode="present"] .ctl { margin-bottom: .6rem; }
+:root[data-mode="present"] .traj { max-height: 22vh; }
+:root[data-mode="present"] .sec-head { margin: 0 0 1rem; }
+
+:root[data-mode="present"] .hud {
+  display: flex; align-items: center; gap: .7rem;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  padding: .4rem clamp(.6rem, 2vw, 2rem);
+  background: var(--surface); border-top: 1px solid var(--rule);
+  font-family: var(--sans); font-size: clamp(12px, .55rem, 20px); color: var(--ink-mute);
+}
+.hud .where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud .where b { color: var(--ink); font-weight: 600; }
+.hud .count, .hud .zoom {
+  font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .04em; white-space: nowrap;
+}
+.hud button {
+  font-family: var(--sans); font-size: inherit; padding: .25rem .6rem;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.hud button:hover { border-color: var(--ink-mute); }
+.hud .sep { width: 1px; align-self: stretch; background: var(--rule); }
+.hud .bar { position: absolute; left: 0; top: -1px; height: 2px; background: var(--agente); transition: width .18s ease; }
+
+/* ---------- responsivo ---------- */
+
+@media (max-width: 62rem) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--rule); padding: 1.5rem; }
+  .rail nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0 1.2rem; }
+  .rail-foot { margin-top: 1rem; }
+  .wrap { padding-left: 1.5rem; padding-right: 1.5rem; }
+  .sld { grid-template-columns: 8.5rem 1fr 4.2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+html { scroll-behavior: smooth; }
+
+/* ---------- pseudocódigo ---------- */
+
+.pseudo {
+  font-family: var(--mono); font-size: .82rem; line-height: 1.6;
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 2px solid var(--agente);
+  padding: .85rem 1.05rem; margin: 0 0 1.1rem;
+  overflow-x: auto; white-space: pre; color: var(--ink-soft);
+}
+.pseudo b { color: var(--agente); font-weight: 600; }
+.pseudo u { color: var(--recompensa); text-decoration: none; }
+.pseudo i { color: var(--ink-mute); font-style: italic; }
+:root[data-mode="present"] .pseudo { font-size: .78rem; margin-bottom: 0; }
+
+/* dica curta abaixo de uma demo */
+.hint { font-family: var(--sans); font-size: .76rem; color: var(--ink-mute); margin: .5rem 0 0; }
+
+/* fichas lado a lado (comparação curta) */
+.fichas { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; margin: 0 0 1.1rem; }
+.ficha { border: 1px solid var(--rule); border-top: 2px solid var(--ink-mute); background: var(--surface); padding: .7rem .85rem; }
+.ficha .lab {
+  font-family: var(--mono); font-size: .64rem; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--ink-mute); display: block; margin-bottom: .3rem;
+}
+.ficha p { font-family: var(--sans); font-size: .84rem; margin: 0; color: var(--ink-soft); }
+.ficha.age { border-top-color: var(--agente); } .ficha.age .lab { color: var(--agente); }
+.ficha.amb { border-top-color: var(--ambiente); } .ficha.amb .lab { color: var(--ambiente); }
+.ficha.rec { border-top-color: var(--recompensa); } .ficha.rec .lab { color: var(--recompensa); }
+.ficha.ale { border-top-color: var(--alerta); } .ficha.ale .lab { color: var(--alerta); }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-brand">
+      <b>PPGI071</b>
+      Aprendizado por Reforço · Aula 02<br>
+      Instituto de Computação · UFAL
+    </div>
+    <nav id="toc">
+      <a href="#motivacao"><span class="n">01</span><span>n máquinas, um estado</span></a>
+      <a href="#valor"><span class="n">02</span><span>Métodos ação-valor</span></a>
+      <a href="#guloso"><span class="n">03</span><span>Guloso: o que ele perde</span></a>
+      <a href="#epsilon"><span class="n">04</span><span>ε-guloso e o testbed</span></a>
+      <a href="#incremental"><span class="n">05</span><span>Abordagem incremental</span></a>
+      <a href="#naoestacionario"><span class="n">06</span><span>Problema não estacionário</span></a>
+      <a href="#otimista"><span class="n">07</span><span>Valores iniciais otimistas</span></a>
+      <a href="#ucb"><span class="n">08</span><span>Upper-Confidence-Bound</span></a>
+      <a href="#alem"><span class="n">09</span><span>Além do bandit simples</span></a>
+      <a href="#sintese"><span class="n">10</span><span>Síntese e atividades</span></a>
+    </nav>
+    <div class="rail-foot">
+      <button class="rail-btn accent" id="presentBtn" type="button">▶ Modo apresentação</button>
+      <button class="rail-btn" id="themeBtn" type="button">Tema: automático</button>
+      <a class="rail-btn" href="../index.html">← Página da disciplina</a>
+      <span>Prof. Glauber R. Leite</span>
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- ============ CAPA ============ -->
+    <header class="hero">
+      <div class="wrap">
+        <div class="slide" data-sec="Abertura">
+          <div>
+            <div class="eyebrow">Aula 02 · Multi-armed bandits</div>
+            <h1>Um estado, <em>n</em> alavancas</h1>
+            <p class="dek">
+              Tire o estado do problema e sobra o dilema puro: apostar no que já parece bom
+              ou gastar jogadas para descobrir o que ainda não se sabe.
+            </p>
+          </div>
+          <div class="hero-fig">
+            <canvas id="heroCanvas" aria-label="Cinco máquinas caça-níqueis com distribuições de recompensa desconhecidas; a cada instante uma delas é acionada e devolve um valor sorteado"></canvas>
+            <div class="hero-cap">
+              <span class="k-age">a ação escolhida</span>
+              <span class="k-amb">a distribuição escondida</span>
+              <span class="k-rec">a recompensa sorteada</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============ 01 ============ -->
+    <section id="motivacao">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 01 · n máquinas, um estado">
+          <div class="sec-head">
+            <span class="n">§ 01</span>
+            <h2>Você tem fichas e n máquinas</h2>
+            <span class="sub">Cada uma paga segundo uma distribuição que você não conhece</span>
+          </div>
+          <ul>
+            <li>São <strong>n</strong> <i>slot machines</i> (os <i>bandits</i>) e você escolhe em qual jogar.</li>
+            <li>Cada máquina tem sua própria <strong>probabilidade de prêmio</strong> — desconhecida.</li>
+            <li>Cada jogada devolve uma <strong>recompensa</strong>: só no <i>jackpot</i>, ou um valor proporcional.</li>
+            <li>Nada indica qual máquina é a melhor. A única fonte de informação é <strong>jogar</strong>.</li>
+          </ul>
+          <div class="note">
+            <span class="lab">A pergunta que guia a aula</span>
+            <p>Com um orçamento finito de jogadas, quanto vale gastar uma delas em uma máquina
+            que provavelmente <strong>não</strong> é a melhor?</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 01 · n máquinas, um estado">
+          <h3>O que sobrou da aula 01</h3>
+          <div class="tbl-scroll">
+            <table class="tri">
+              <thead>
+                <tr><th></th><th>Caso geral (aula 01)</th><th>Bandit (esta aula)</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><strong>Estados</strong></td><td>vários, e a ação muda o estado</td><td><strong>um só</strong> — a ação não muda nada</td></tr>
+                <tr><td><strong>Ações</strong></td><td>dependem do estado</td><td>as mesmas <span class="v">n</span>, sempre</td></tr>
+                <tr><td><strong>Consequência</strong></td><td>atrasada e distribuída no tempo</td><td><strong>imediata</strong>: chega no mesmo passo</td></tr>
+                <tr><td><strong>Dificuldade</strong></td><td>crédito + exploração</td><td><strong>só exploração</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="defn amb">
+            <span class="lab">Por que estudar um caso tão pobre</span>
+            <p>É o menor problema em que o dilema <strong>exploração × explotação</strong> ainda
+            aparece inteiro. Tudo o que aprendermos aqui reaparece dentro dos métodos completos.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 01 · n máquinas, um estado">
+          <h3>O valor de uma ação</h3>
+          <p>Cada ação tem uma <strong>recompensa esperada</strong> quando é selecionada. Chamamos
+          essa expectativa de <strong>valor</strong> (<i>value</i>) da ação.</p>
+          <div class="eq">
+            <span class="op-age"><span class="v">q</span>(<span class="v">a</span>)</span>
+            &nbsp;≐&nbsp;
+            𝔼[ <span class="op-rec"><span class="v">R</span><sub>t</sub></span> |
+            <span class="op-age"><span class="v">A</span><sub>t</sub> = <span class="v">a</span></span> ]
+            <small>o valor real da ação <span class="v">a</span> ∈ 𝒜 — que o agente <b>não</b> conhece</small>
+          </div>
+          <div class="fichas">
+            <div class="ficha rec">
+              <span class="lab">se soubéssemos q(a)</span>
+              <p>O problema deixaria de ser aprendizado: bastaria escolher o maior
+              <span class="v">q</span>(<span class="v">a</span>) para sempre. Pura otimização.</p>
+            </div>
+            <div class="ficha age">
+              <span class="lab">o que temos de fato</span>
+              <p>Uma <strong>estimativa</strong>
+              <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>) no instante
+              <span class="v">t</span>, construída só com o que já foi observado.</p>
+            </div>
+          </div>
+          <div class="note problema">
+            <span class="lab">O jogo desta aula</span>
+            <p>Fazer <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>) chegar perto de
+            <span class="v">q</span>(<span class="v">a</span>) <strong>enquanto</strong> se ganha o
+            máximo possível de recompensa. As duas coisas competem entre si.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 02 ============ -->
+    <section id="valor">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 02 · Métodos ação-valor">
+          <div class="sec-head">
+            <span class="n">§ 02</span>
+            <h2>A estimativa mais simples possível: a média</h2>
+            <span class="sub">Guardar as recompensas de cada ação e tirar a média delas</span>
+          </div>
+          <p>Depois de <span class="v">N</span><sub>t</sub>(<span class="v">a</span>) tentativas da
+          ação <span class="v">a</span>, com recompensas
+          <span class="v">R</span><sub>i</sub>, <span class="v">i</span> = 1, …,
+          <span class="v">N</span><sub>t</sub>(<span class="v">a</span>):</p>
+          <div class="eq">
+            <span class="op-age"><span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)</span>
+            &nbsp;=&nbsp;
+            <span class="sum">∑</span><sub style="font-size:.7em">i=1</sub><sup style="font-size:.7em">N<sub>t</sub>(a)</sup>
+            <span class="frac">
+              <span><span class="op-rec"><span class="v">R</span><sub>i</sub></span></span>
+              <span><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
+            </span>
+            <small>média amostral — o <i>método ação-valor</i> mais direto</small>
+          </div>
+          <div class="note">
+            <span class="lab">E quando a ação nunca foi tentada</span>
+            <p>Se <span class="v">N</span><sub>t</sub>(<span class="v">a</span>) = 0, definimos
+            <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>) por um valor padrão —
+            <strong>0</strong>, por exemplo. Guarde essa escolha: no § 07 ela vira um método.</p>
+          </div>
+          <div class="defn rec">
+            <span class="lab">💡 Lei dos grandes números</span>
+            <p><span class="v">N</span><sub>t</sub>(<span class="v">a</span>) → ∞&nbsp; ⟹ &nbsp;
+            <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>) →
+            <span class="v">q</span>(<span class="v">a</span>).</p>
+            <p>A garantia vale <strong>para cada ação separadamente</strong> — e só para as ações
+            que forem tentadas infinitas vezes.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 02 · Métodos ação-valor">
+          <h3>Cinco máquinas, na mão</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Estimar q(a) jogando</span>
+              <span class="h">clique numa barra para jogar naquela máquina</span>
+            </div>
+            <div class="demo-body">
+              <div class="ctl">
+                <button class="b primary" id="maqAuto" type="button">×25 aleatório</button>
+                <button class="b" id="maqGul" type="button">×25 guloso</button>
+                <button class="b" id="maqRev" type="button">Revelar q(a)</button>
+                <button class="b" id="maqReset" type="button">Novo problema</button>
+              </div>
+              <canvas class="plot" id="maqCanvas" aria-label="Cinco barras com a estimativa Q(a) de cada máquina, o número de tentativas N(a) e, quando revelado, o valor verdadeiro q(a)"></canvas>
+              <div class="readout">
+                <div><span class="k">passos t</span><span class="val" id="maqT">0</span></div>
+                <div><span class="k">recompensa média</span><span class="val rec" id="maqMed">—</span></div>
+                <div><span class="k">maior Q(a)</span><span class="val age" id="maqArg">—</span></div>
+                <div><span class="k">é a melhor?</span><span class="val amb" id="maqOk">—</span></div>
+              </div>
+              <div class="verdict rec" id="maqMsg">Jogue algumas vezes em cada máquina e veja as estimativas se assentarem.</div>
+            </div>
+          </div>
+          <p class="hint">A recompensa de cada jogada é ruidosa: uma barra pode parecer ótima
+          depois de duas jogadas de sorte.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 03 ============ -->
+    <section id="guloso">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 03 · Guloso: o que ele perde">
+          <div class="sec-head">
+            <span class="n">§ 03</span>
+            <h2>A regra gulosa</h2>
+            <span class="sub">Sempre a melhor ação — segundo o conhecimento atual</span>
+          </div>
+          <div class="eq">
+            <span class="op-age"><span class="v">A</span><sub>t</sub></span>
+            &nbsp;=&nbsp; arg max<sub style="font-size:.75em"><span class="v">a</span> ∈ 𝒜</sub>
+            &nbsp;<span class="op-age"><span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)</span>
+            <small>seleção gulosa: explotação pura</small>
+          </div>
+          <div class="fichas">
+            <div class="ficha age">
+              <span class="lab">explotação</span>
+              <p>Usar o que já se sabe para <strong>ganhar agora</strong>. É o que a regra gulosa
+              faz em 100% dos passos.</p>
+            </div>
+            <div class="ficha amb">
+              <span class="lab">exploração</span>
+              <p>Gastar uma jogada para <strong>saber melhor</strong>. Custa recompensa imediata e
+              paga em decisões futuras.</p>
+            </div>
+          </div>
+          <div class="note problema">
+            <span class="lab">⚠️ Onde a regra gulosa quebra</span>
+            <p>A lei dos grandes números só age sobre ações <strong>tentadas</strong>. O agente
+            guloso trava na primeira que pareceu boa e deixa as outras com a estimativa inicial
+            para sempre — inclusive a melhor de todas.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 03 · Guloso: o que ele perde">
+          <h3>Um empate desfeito por sorte</h3>
+          <p>No começo todas as estimativas valem 0. A primeira ação sorteada que devolver uma
+          recompensa positiva vira a favorita — e o guloso nunca mais sai dela, porque só ela
+          recebe atualizações.</p>
+          <div class="defn">
+            <span class="lab">A falha não é de estimativa, é de dado</span>
+            <p>O guloso não estima mal: ele estima bem <strong>uma única ação</strong>. Sobre as
+            demais ele não tem dado nenhum — e não vai ter, porque a política que ele usa para
+            aprender é a mesma que ele usa para agir.</p>
+          </div>
+          <p>Precisamos de uma regra que <strong>quase sempre</strong> seja gulosa, mas que de vez
+          em quando abra mão do argmax.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 04 ============ -->
+    <section id="epsilon">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 04 · ε-guloso e o testbed">
+          <div class="sec-head">
+            <span class="n">§ 04</span>
+            <h2>ε-guloso</h2>
+            <span class="sub">Quase guloso: com probabilidade ε, sorteia uniformemente</span>
+          </div>
+          <div class="eq">
+            <span class="op-age"><span class="v">A</span><sub>t</sub></span> =
+            &nbsp;arg max<sub style="font-size:.75em"><span class="v">a</span></sub>
+            <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)
+            &nbsp;&nbsp;com probabilidade&nbsp; 1 − ε
+            <small>e uma ação qualquer, sorteada de 𝒰(1, <span class="v">n</span>), com probabilidade ε</small>
+          </div>
+          <div class="defn amb">
+            <span class="lab">Por que isso resolve</span>
+            <p>Com ε &gt; 0, toda ação é escolhida infinitas vezes quando
+            <span class="v">t</span> → ∞. Logo <strong>toda</strong>
+            <span class="v">Q</span><sub>t</sub>(<span class="v">a</span>) converge para
+            <span class="v">q</span>(<span class="v">a</span>), e a probabilidade de escolher a
+            ação ótima converge para mais de 1 − ε.</p>
+          </div>
+          <div class="note">
+            <span class="lab">O preço</span>
+            <p>"Mais de 1 − ε" não é 1. O agente continua sorteando às cegas mesmo depois de já
+            saber a resposta.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 04 · ε-guloso e o testbed">
+          <h3>O algoritmo, por extenso</h3>
+          <div class="pseudo"><b>INICIALIZE</b>, para a = 1 até n:
+    Q(a) ← 0
+    N(a) ← 0
+<b>REPITA</b>, para sempre:
+    Amostre p aleatoriamente ~ U(0, 1)
+    <b>SE</b> p &gt; ε <b>ENTÃO</b>
+        A ← argmax{a} Q(a)          <i>explota</i>
+    <b>SENÃO</b>
+        Escolha A aleatoriamente ~ U(1,n)   <i>explora</i>
+    <b>FIMSE</b>
+    R ← bandit(A)
+    N(A) ← N(A) + 1
+    <u>Q(A) ← média(Q(A))</u></div>
+          <div class="note problema">
+            <span class="lab">O problema da última linha</span>
+            <p>Calcular <code>média(Q(A))</code> assim exige guardar <strong>todas</strong> as
+            recompensas de cada ação, indefinidamente. Memória cresce sem limite e o custo por
+            passo cresce junto. Resolvemos isso no § 05 — antes de rodar qualquer coisa.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 04 · ε-guloso e o testbed">
+          <h3>O testbed de 10 braços</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Testbed de 10 braços</span>
+              <span class="h">média de 200 execuções · 1000 passos · curvas suavizadas</span>
+            </div>
+            <div class="demo-body">
+              <div class="ctl">
+                <button class="b primary" id="banRun" type="button">Rodar</button>
+                <div class="seg" id="banSeg">
+                  <button type="button" data-k="rec" aria-pressed="true">Recompensa média</button>
+                  <button type="button" data-k="opt" aria-pressed="false">% de ação ótima</button>
+                </div>
+              </div>
+              <div class="sliders">
+                <div class="sld">
+                  <label for="banEps">ε da quarta curva</label>
+                  <input type="range" id="banEps" min="0" max="0.5" step="0.01" value="0.30">
+                  <output id="banEpsOut">0,30</output>
+                </div>
+              </div>
+              <canvas class="plot" id="banCanvas" aria-label="Curvas de recompensa média por passo para diferentes valores de epsilon na política epsilon-gulosa"></canvas>
+              <div class="readout">
+                <div><span class="k">ε = 0 (guloso)</span><span class="val" id="banV0">—</span></div>
+                <div><span class="k">ε = 0,01</span><span class="val amb" id="banV1">—</span></div>
+                <div><span class="k">ε = 0,1</span><span class="val rec" id="banV2">—</span></div>
+                <div><span class="k">ε ajustável</span><span class="val age" id="banV3">—</span></div>
+              </div>
+              <div class="verdict rec" id="banMsg">Clique em “Rodar”. Os números da leitura são a média dos últimos 100 passos.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 04 · ε-guloso e o testbed">
+          <h3>Como o experimento é montado</h3>
+          <ul>
+            <li><strong>2000 problemas</strong> de <span class="v">n</span> = 10 braços, sorteados
+              ao acaso (aqui, 200 — para rodar no navegador).</li>
+            <li>Em cada problema, os valores reais
+              <span class="v">q</span>(<span class="v">a</span>) vêm de uma normal de média 0 e
+              variância 1.</li>
+            <li>Ao escolher <span class="v">A</span><sub>t</sub>, a recompensa é
+              <span class="v">q</span>(<span class="v">A</span><sub>t</sub>) mais um ruído normal
+              de média 0 e variância 1.</li>
+            <li>Mede-se o desempenho ao longo de <strong>1000 passos</strong>, promediado sobre
+              os problemas.</li>
+          </ul>
+          <div class="note">
+            <span class="lab">Fonte</span>
+            <p>É a figura 2.2 do Sutton &amp; Barto. As quatro curvas veem exatamente os
+            <strong>mesmos</strong> problemas: a diferença entre elas é só a política.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 04 · ε-guloso e o testbed">
+          <h3>O que a figura ensina</h3>
+          <ul>
+            <li><strong>ε = 0</strong> sobe rápido e <strong>estaciona</strong> num patamar baixo:
+              trava na primeira ação que pareceu boa.</li>
+            <li><strong>ε = 0,1</strong> aprende rápido, mas paga pedágio para sempre — explora
+              10% das vezes mesmo já sabendo a resposta.</li>
+            <li><strong>ε = 0,01</strong> demora muito mais e, no longo prazo, passa à frente.</li>
+            <li><strong>ε grande</strong> (experimente 0,3) derruba a curva: exploração demais é
+              tão ruim quanto de menos.</li>
+          </ul>
+          <div class="defn rec">
+            <span class="lab">A conclusão</span>
+            <p>Não existe ε ótimo universal. Existe ε adequado ao <strong>horizonte</strong> —
+            e ao quanto a recompensa é ruidosa.</p>
+          </div>
+          <details class="mais">
+            <summary>E se o ruído mudar de tamanho</summary>
+            <div class="corpo">
+              <p>Com variância maior, é preciso <strong>mais</strong> exploração para separar as
+              ações: o ε bom sobe. Com ruído zero, o guloso acerta na primeira passada por todas as
+              ações — não há o que explorar. O caso realmente difícil é o do § 06: ruído
+              <i>e</i> valores que mudam.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 05 ============ -->
+    <section id="incremental">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 05 · Abordagem incremental">
+          <div class="sec-head">
+            <span class="n">§ 05</span>
+            <h2>A média sem guardar nada</h2>
+            <span class="sub">Um pouco de recursividade resolve o problema de memória</span>
+          </div>
+          <div class="eq">
+            <span class="op-age"><span class="v">Q</span><sub>k+1</sub></span> =
+            <span class="frac"><span>1</span><span><span class="v">k</span></span></span>
+            <span class="sum">∑</span><sub style="font-size:.7em">i=1</sub><sup style="font-size:.7em">k</sup>
+            <span class="op-rec"><span class="v">R</span><sub>i</sub></span>
+            &nbsp;=&nbsp;
+            <span class="op-age"><span class="v">Q</span><sub>k</sub></span> +
+            <span class="frac"><span>1</span><span><span class="v">k</span></span></span>
+            [ <span class="op-rec"><span class="v">R</span><sub>k</sub></span> −
+            <span class="op-age"><span class="v">Q</span><sub>k</sub></span> ]
+            <small>a mesma média — agora com dois números por ação: <span class="v">Q</span> e <span class="v">k</span></small>
+          </div>
+          <div class="defn amb">
+            <span class="lab">O que isso compra</span>
+            <p>Memória <strong>constante</strong> por ação e custo constante por passo,
+            independentemente de quantas jogadas já aconteceram. Sem aproximação: o resultado é
+            exatamente a média amostral.</p>
+          </div>
+          <details class="mais">
+            <summary>A conta, linha a linha</summary>
+            <div class="corpo">
+              <p><span class="v">Q</span><sub>k+1</sub> =
+              (1/<span class="v">k</span>) ∑<sub>i=1..k</sub> <span class="v">R</span><sub>i</sub>
+              = (1/<span class="v">k</span>) [ <span class="v">R</span><sub>k</sub> +
+              ∑<sub>i=1..k−1</sub> <span class="v">R</span><sub>i</sub> ].</p>
+              <p>Mas ∑<sub>i=1..k−1</sub> <span class="v">R</span><sub>i</sub> =
+              (<span class="v">k</span>−1) <span class="v">Q</span><sub>k</sub>. Substituindo:
+              <span class="v">Q</span><sub>k+1</sub> = (1/<span class="v">k</span>)
+              [ <span class="v">R</span><sub>k</sub> + (<span class="v">k</span>−1)
+              <span class="v">Q</span><sub>k</sub> ] =
+              <span class="v">Q</span><sub>k</sub> + (1/<span class="v">k</span>)
+              [ <span class="v">R</span><sub>k</sub> − <span class="v">Q</span><sub>k</sub> ].</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="slide" data-sec="§ 05 · Abordagem incremental">
+          <h3>Uma forma que vai reaparecer o curso inteiro</h3>
+          <blockquote>
+            NewEstimate ← OldEstimate + StepSize [ Target − OldEstimate ]
+          </blockquote>
+          <div class="fichas">
+            <div class="ficha rec">
+              <span class="lab">Target − OldEstimate</span>
+              <p>O <strong>erro</strong> da estimativa. Andamos <i>na direção dele</i>, nunca até
+              ele.</p>
+            </div>
+            <div class="ficha age">
+              <span class="lab">StepSize</span>
+              <p>Quanto do erro é aceito. Aqui vale 1/<span class="v">k</span>: cai a cada nova
+              observação daquela ação.</p>
+            </div>
+            <div class="ficha amb">
+              <span class="lab">onde reaparece</span>
+              <p>Monte Carlo, TD, Q-learning, gradiente de política — todos são esta linha com
+              outro alvo.</p>
+            </div>
+          </div>
+          <div class="note">
+            <span class="lab">Atenção ao passo 1/k</span>
+            <p>Ele encolhe: a milésima recompensa mexe mil vezes menos na estimativa do que a
+            primeira. Isso é <strong>exatamente o que se quer</strong> quando a distribuição não
+            muda — e exatamente o que <strong>não</strong> se quer quando ela muda.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 05 · Abordagem incremental">
+          <h3>Quanto pesa cada recompensa do passado</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Peso das observações</span>
+              <span class="h">as últimas 40 recompensas de uma mesma ação</span>
+            </div>
+            <div class="demo-body">
+              <div class="sliders">
+                <div class="sld">
+                  <label for="pesAlpha">passo constante α</label>
+                  <input type="range" id="pesAlpha" min="0.02" max="0.9" step="0.01" value="0.10">
+                  <output id="pesAlphaOut">0,10</output>
+                </div>
+                <div class="sld">
+                  <label for="pesK">jogadas já feitas (k)</label>
+                  <input type="range" id="pesK" min="5" max="40" step="1" value="40">
+                  <output id="pesKOut">40</output>
+                </div>
+              </div>
+              <canvas class="plot curto" id="pesCanvas" aria-label="Comparação do peso dado a cada recompensa passada: uniforme para passo 1/k e decaimento exponencial para passo alfa constante"></canvas>
+              <div class="readout">
+                <div><span class="k">peso da última (1/k)</span><span class="val" id="pesU">—</span></div>
+                <div><span class="k">peso da última (α)</span><span class="val age" id="pesA">—</span></div>
+                <div><span class="k">meia-vida com α</span><span class="val rec" id="pesH">—</span></div>
+                <div><span class="k">peso de Q₁ com α</span><span class="val ale" id="pesQ0">—</span></div>
+              </div>
+              <div class="verdict ok" id="pesMsg">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 06 ============ -->
+    <section id="naoestacionario">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 06 · Problema não estacionário">
+          <div class="sec-head">
+            <span class="n">§ 06</span>
+            <h2>Quando o bandit muda enquanto se joga</h2>
+            <span class="sub">A distribuição de recompensa não é fixa — e o passado envelhece</span>
+          </div>
+          <p>Se a distribuição de recompensa do <i>bandit</i> muda com o tempo, faz sentido
+          <strong>ponderar mais as recompensas recentes</strong> do que as antigas.</p>
+          <p>Basta trocar o passo 1/<span class="v">k</span> por uma constante
+          α ∈ (0, 1]:</p>
+          <div class="eq">
+            <span class="op-age"><span class="v">Q</span><sub>k+1</sub></span> =
+            <span class="op-age"><span class="v">Q</span><sub>k</sub></span> +
+            α [ <span class="op-rec"><span class="v">R</span><sub>k</sub></span> −
+            <span class="op-age"><span class="v">Q</span><sub>k</sub></span> ]
+            <small>média com desconto exponencial: o peso de uma recompensa cai como (1−α) a cada passo</small>
+          </div>
+          <div class="fichas">
+            <div class="ficha amb">
+              <span class="lab">passo 1/k</span>
+              <p>Converge (garantido) — mas só serve para um alvo <strong>parado</strong>.</p>
+            </div>
+            <div class="ficha age">
+              <span class="lab">passo α constante</span>
+              <p>Nunca converge de todo: fica sempre respondendo ao ruído. É o preço de conseguir
+              <strong>esquecer</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 06 · Problema não estacionário">
+          <h3>O algoritmo, com a última linha resolvida</h3>
+          <div class="pseudo"><b>INICIALIZE</b>, para a = 1 até n:
+    Q(a) ← 0
+    N(a) ← 0
+<b>REPITA</b>, para sempre:
+    Amostre p aleatoriamente ~ U(0, 1)
+    <b>SE</b> p &gt; ε <b>ENTÃO</b>
+        A ← argmax{a} Q(a)
+    <b>SENÃO</b>
+        Escolha A aleatoriamente ~ U(1,n)
+    <b>FIMSE</b>
+    R ← bandit(A)
+    N(A) ← N(A) + 1
+    <u>Q(A) ← Q(A) + α [R − Q(A)]</u></div>
+          <div class="note">
+            <span class="lab">Duas versões, um código só</span>
+            <p>Trocando α por 1/<span class="v">N</span>(A) volta-se à média amostral. É a mesma
+            implementação — muda uma linha.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 06 · Problema não estacionário">
+          <h3>Um testbed que anda</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Bandit não estacionário</span>
+              <span class="h">os q(a) fazem um passeio aleatório · 100 execuções · 5000 passos</span>
+            </div>
+            <div class="demo-body">
+              <div class="ctl">
+                <button class="b primary" id="nsRun" type="button">Rodar</button>
+                <div class="seg" id="nsSeg">
+                  <button type="button" data-k="rec" aria-pressed="true">Recompensa média</button>
+                  <button type="button" data-k="opt" aria-pressed="false">% de ação ótima</button>
+                  <button type="button" data-k="walk" aria-pressed="false">Passeio dos q(a)</button>
+                </div>
+              </div>
+              <div class="sliders">
+                <div class="sld">
+                  <label for="nsAlpha">passo constante α</label>
+                  <input type="range" id="nsAlpha" min="0.02" max="0.5" step="0.01" value="0.10">
+                  <output id="nsAlphaOut">0,10</output>
+                </div>
+                <div class="sld">
+                  <label for="nsSig">deriva por passo σ</label>
+                  <input type="range" id="nsSig" min="0" max="0.05" step="0.005" value="0.01">
+                  <output id="nsSigOut">0,010</output>
+                </div>
+              </div>
+              <canvas class="plot" id="nsCanvas" aria-label="Comparação entre média amostral e passo constante em um bandit cujos valores verdadeiros derivam ao longo do tempo"></canvas>
+              <div class="readout">
+                <div><span class="k">média amostral (1/N)</span><span class="val amb" id="nsV0">—</span></div>
+                <div><span class="k">passo α constante</span><span class="val age" id="nsV1">—</span></div>
+                <div><span class="k">diferença</span><span class="val rec" id="nsV2">—</span></div>
+              </div>
+              <div class="verdict rec" id="nsMsg">Ambas usam ε = 0,1. A única diferença é o passo.</div>
+            </div>
+          </div>
+          <p class="hint">Com σ = 0 o problema volta a ser estacionário — e a vantagem se inverte.
+          Vale testar.</p>
+        </div>
+
+        <div class="slide" data-sec="§ 06 · Problema não estacionário">
+          <h3>A leitura</h3>
+          <ul>
+            <li>No começo as duas curvas andam juntas: ainda há pouca história para envelhecer.</li>
+            <li>Depois a média amostral <strong>trava</strong>: cada nova recompensa entra com peso
+              1/<span class="v">N</span>, pequeno demais para corrigir um valor que se moveu.</li>
+            <li>O passo constante mantém uma janela efetiva de memória de cerca de
+              1/α passos — e acompanha a deriva.</li>
+          </ul>
+          <div class="defn rec">
+            <span class="lab">Regra prática</span>
+            <p>Ambiente parado, use 1/<span class="v">N</span>. Ambiente que muda — quase todo
+            problema real — use α constante e escolha-o pela <strong>velocidade da mudança</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 07 ============ -->
+    <section id="otimista">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 07 · Valores iniciais otimistas">
+          <div class="sec-head">
+            <span class="n">§ 07</span>
+            <h2>Aquele valor padrão do § 02</h2>
+            <span class="sub">Escolher <span class="v">Q</span><sub>1</sub>(<span class="v">a</span>) = 0 foi uma decisão — e havia outra</span>
+          </div>
+          <p>Se as recompensas rondam 0, começar com
+          <span class="v">Q</span><sub>1</sub>(<span class="v">a</span>) = <strong>+5</strong> deixa
+          toda ação parecendo excelente. A primeira jogada em qualquer máquina <i>decepciona</i>,
+          a estimativa cai, e o argmax passa para outra ainda não tentada.</p>
+          <div class="defn amb">
+            <span class="lab">Exploração sem sorteio</span>
+            <p>Um agente <strong>totalmente guloso</strong> com início otimista varre todas as
+            ações várias vezes antes de assentar. A exploração vem do <strong>otimismo</strong>,
+            não do acaso.</p>
+          </div>
+          <div class="note problema">
+            <span class="lab">⚠️ Truque, não método</span>
+            <p>O impulso é <strong>temporário</strong>: acaba quando o otimismo se dissipa. Num
+            problema não estacionário — em que a exploração precisa ser permanente — ele não
+            serve. E o valor "+5" só faz sentido se você já souber a escala da recompensa.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 07 · Valores iniciais otimistas">
+          <h3>Como fica na prática</h3>
+          <ul>
+            <li>No <strong>começo</strong> o otimista tem desempenho <i>pior</i>: ele está
+              explorando muito, e de propósito.</li>
+            <li>Passada essa fase, ele costuma superar o ε-guloso — que continua pagando pedágio.</li>
+            <li>Compare no gráfico do § 08: a curva do otimista tem uma cova característica no
+              início.</li>
+          </ul>
+          <details class="mais">
+            <summary>Por que 1/N estraga o efeito</summary>
+            <div class="corpo">
+              <p>Com passo 1/<span class="v">N</span>, o primeiro retorno de cada ação apaga o
+              valor inicial de uma vez (peso 1 na primeira observação). Com α constante o
+              otimismo escorre devagar — o peso de
+              <span class="v">Q</span><sub>1</sub> cai como (1−α)<sup><span class="v">k</span></sup>
+              — e é isso que sustenta a varredura. Por isso o método costuma vir com α constante.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 08 ============ -->
+    <section id="ucb">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 08 · Upper-Confidence-Bound">
+          <div class="sec-head">
+            <span class="n">§ 08</span>
+            <h2>Explorar onde ainda há dúvida</h2>
+            <span class="sub">Nem toda ação não-gulosa merece a mesma chance</span>
+          </div>
+          <blockquote>
+            Exploration is needed because the estimates of the action values are uncertain.
+            <cite>Sutton &amp; Barto, <i>Reinforcement Learning: An Introduction</i>, § 2.7</cite>
+          </blockquote>
+          <div class="fichas">
+            <div class="ficha ale">
+              <span class="lab">ε-guloso</span>
+              <p>Quando explora, sorteia <strong>uniformemente</strong>: a ação claramente ruim
+              recebe a mesma chance da promissora.</p>
+            </div>
+            <div class="ficha age">
+              <span class="lab">UCB</span>
+              <p>Usa a <strong>incerteza</strong> de cada ação para preferir as que ainda podem
+              ser as melhores.</p>
+            </div>
+          </div>
+          <div class="eq">
+            <span class="op-age"><span class="v">A</span><sub>t</sub></span> =
+            arg max<sub style="font-size:.75em"><span class="v">a</span> ∈ 𝒜</sub>
+            [ <span class="op-age"><span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)</span> +
+            <span class="v">c</span> √<span style="border-top:1px solid currentColor; padding:0 .25em">
+              <span class="frac" style="vertical-align:-0.15em">
+                <span>ln <span class="v">t</span></span>
+                <span><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
+              </span></span> ]
+            <small><span class="v">c</span> &gt; 0 controla o grau de exploração; se <span class="v">N</span><sub>t</sub>(<span class="v">a</span>) = 0, <span class="v">a</span> é considerada maximizadora</small>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 08 · Upper-Confidence-Bound">
+          <h3>Lendo o termo de bônus</h3>
+          <div class="fichas">
+            <div class="ficha rec">
+              <span class="lab">N<sub>t</sub>(a) no denominador</span>
+              <p>Cada vez que <span class="v">a</span> é escolhida, a incerteza cai e o bônus
+              <strong>encolhe</strong>.</p>
+            </div>
+            <div class="ficha amb">
+              <span class="lab">ln t no numerador</span>
+              <p>O tempo passa para <i>todas</i>: uma ação esquecida vai ficando
+              <strong>mais atraente</strong> — mas cada vez mais devagar.</p>
+            </div>
+            <div class="ficha age">
+              <span class="lab">a soma</span>
+              <p>É um <strong>limite superior plausível</strong> para
+              <span class="v">q</span>(<span class="v">a</span>). Escolhe-se a ação com o melhor
+              cenário ainda possível.</p>
+            </div>
+          </div>
+          <div class="note">
+            <span class="lab">Otimismo diante da incerteza</span>
+            <p>Se o limite superior for alto porque a estimativa é boa, ótimo — ganhamos
+            recompensa. Se for alto porque quase não há dado, também ótimo — ganhamos informação,
+            e o bônus cai. <strong>Não existe escolha ruim.</strong></p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 08 · Upper-Confidence-Bound">
+          <h3>O bônus, braço a braço</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Q(a) + bônus, passo a passo</span>
+              <span class="h">10 braços · a barra mais alta é a escolhida</span>
+            </div>
+            <div class="demo-body">
+              <div class="ctl">
+                <button class="b primary" id="bonStep" type="button">1 passo</button>
+                <button class="b" id="bonJump" type="button">×25</button>
+                <button class="b" id="bonAuto" type="button">Automático</button>
+                <button class="b" id="bonReset" type="button">Reiniciar</button>
+              </div>
+              <div class="sliders">
+                <div class="sld">
+                  <label for="bonC">grau de exploração c</label>
+                  <input type="range" id="bonC" min="0" max="4" step="0.1" value="2">
+                  <output id="bonCOut">2,0</output>
+                </div>
+              </div>
+              <canvas class="plot" id="bonCanvas" aria-label="Para cada um dos dez braços, a estimativa Q(a) empilhada com o bônus de incerteza do UCB, e o valor verdadeiro marcado"></canvas>
+              <div class="readout">
+                <div><span class="k">passo t</span><span class="val" id="bonT">0</span></div>
+                <div><span class="k">ação escolhida</span><span class="val age" id="bonA">—</span></div>
+                <div><span class="k">bônus dela</span><span class="val rec" id="bonB">—</span></div>
+                <div><span class="k">% de ações ótimas</span><span class="val amb" id="bonO">—</span></div>
+              </div>
+              <div class="verdict rec" id="bonMsg">Nos primeiros n passos o UCB percorre todos os braços — quem tem N(a) = 0 maximiza.</div>
+            </div>
+          </div>
+          <p class="hint">Com <span class="v">c</span> = 0 o UCB vira o guloso puro. Aumente
+          <span class="v">c</span> e veja as barras âmbar dominarem a escolha.</p>
+        </div>
+
+        <div class="slide" data-sec="§ 08 · Upper-Confidence-Bound">
+          <h3>As quatro políticas, no mesmo testbed</h3>
+          <div class="demo">
+            <div class="demo-head">
+              <span class="t">Comparação geral</span>
+              <span class="h">10 braços · média de 200 execuções · 1000 passos</span>
+            </div>
+            <div class="demo-body">
+              <div class="ctl">
+                <button class="b primary" id="cmpRun" type="button">Rodar</button>
+                <div class="seg" id="cmpSeg">
+                  <button type="button" data-k="rec" aria-pressed="true">Recompensa média</button>
+                  <button type="button" data-k="opt" aria-pressed="false">% de ação ótima</button>
+                </div>
+              </div>
+              <div class="sliders">
+                <div class="sld">
+                  <label for="cmpC">c do UCB</label>
+                  <input type="range" id="cmpC" min="0.2" max="4" step="0.1" value="2">
+                  <output id="cmpCOut">2,0</output>
+                </div>
+              </div>
+              <canvas class="plot" id="cmpCanvas" aria-label="Curvas comparando guloso, epsilon-guloso, início otimista e UCB no testbed de dez braços"></canvas>
+              <div class="readout">
+                <div><span class="k">guloso Q₁ = 0</span><span class="val" id="cmpV0">—</span></div>
+                <div><span class="k">ε-guloso 0,1</span><span class="val rec" id="cmpV1">—</span></div>
+                <div><span class="k">otimista Q₁ = 5</span><span class="val amb" id="cmpV2">—</span></div>
+                <div><span class="k">UCB</span><span class="val age" id="cmpV3">—</span></div>
+              </div>
+              <div class="verdict rec" id="cmpMsg">Clique em “Rodar”. Leitura: média dos últimos 100 passos.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 08 · Upper-Confidence-Bound">
+          <h3>O que o UCB não resolve</h3>
+          <ul>
+            <li><strong>Não estacionário</strong>: o bônus supõe que juntar dado reduz a dúvida
+              para sempre — falso quando <span class="v">q</span>(<span class="v">a</span>) anda.</li>
+            <li><strong>Espaços grandes</strong>: contar <span class="v">N</span>(<span class="v">a</span>)
+              por ação não escala para ação contínua nem para estado com aproximação de função.</li>
+            <li><strong>Sensível à escala</strong>: <span class="v">c</span> precisa estar na mesma
+              ordem de grandeza do desvio das recompensas.</li>
+          </ul>
+          <div class="defn">
+            <span class="lab">Mesmo assim</span>
+            <p>No bandit tabular o UCB costuma ser o melhor dos métodos desta aula — e a ideia de
+            <strong>bônus por incerteza</strong> sobrevive inteira no RL profundo, sob o nome de
+            exploração dirigida.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 09 ============ -->
+    <section id="alem">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 09 · Além do bandit simples">
+          <div class="sec-head">
+            <span class="n">§ 09</span>
+            <h2>Outras abordagens possíveis</h2>
+            <span class="sub">Duas direções que valem o nome</span>
+          </div>
+          <div class="defn">
+            <span class="lab">Gradient bandits</span>
+            <p>Em vez de estimar valor, guarda-se uma <strong>preferência</strong>
+            <span class="v">H</span><sub>t</sub>(<span class="v">a</span>), sem significado de
+            recompensa, e a política é a <i>softmax</i> dessas preferências. A atualização sobe o
+            gradiente da recompensa esperada, usando a média das recompensas como
+            <strong>linha de base</strong>.</p>
+            <p>É o primeiro método da disciplina que ajusta <strong>a política diretamente</strong>
+            — a semente dos métodos de gradiente de política.</p>
+          </div>
+          <div class="defn amb">
+            <span class="lab">Contextual bandits</span>
+            <p>Antes de escolher, o agente <strong>observa uma dica</strong> sobre qual bandit está
+            à sua frente. Volta a existir estado — mas a ação ainda <strong>não</strong> muda o
+            próximo estado.</p>
+            <p>Fica exatamente entre o bandit e o problema completo: é o passo que falta para a
+            próxima aula.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 10 ============ -->
+    <section id="sintese">
+      <div class="wrap">
+        <div class="slide" data-sec="§ 10 · Síntese">
+          <div class="sec-head">
+            <span class="n">§ 10</span>
+            <h2>O que fica</h2>
+            <span class="sub">Cinco decisões, e o que cada uma custa</span>
+          </div>
+          <div class="tbl-scroll">
+            <table class="tri">
+              <thead>
+                <tr><th>Método</th><th>Como explora</th><th>Custa</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="q">guloso</td><td>não explora</td><td>trava numa ação subótima</td></tr>
+                <tr><td class="q">ε-guloso</td><td>sorteio uniforme, sempre</td><td>pedágio permanente de ε</td></tr>
+                <tr><td class="q">Q₁ otimista</td><td>decepção nas primeiras jogadas</td><td>só funciona no início, e precisa da escala</td></tr>
+                <tr><td class="q">UCB</td><td>bônus por incerteza</td><td>contagem por ação; não gosta de mudança</td></tr>
+                <tr><td class="q">gradient</td><td>softmax de preferências</td><td>ajusta política, não valor</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="defn rec">
+            <span class="lab">A ideia que atravessa tudo</span>
+            <p><span class="v">Q</span> ← <span class="v">Q</span> + passo [ alvo − <span class="v">Q</span> ].
+            Muda o alvo, muda o passo — o esqueleto continua o mesmo até a última aula.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 10 · Atividades">
+          <h3>Atividades</h3>
+          <div class="ex" data-ex>
+            <span class="lab">Atividade 1 · reproduzir a figura 2.2</span>
+            <p>Rode <code>scripts/bandit_metodos.py</code> variando ε e o número de execuções.
+            Depois responda: para um orçamento de 100 passos, qual ε você escolheria? E para
+            100 000?</p>
+            <button class="b" type="button" data-reveal>O que observar</button>
+            <div class="sol" hidden>
+              <p>Horizonte curto favorece ε maior (é preciso descobrir logo); horizonte longo
+              favorece ε pequeno, porque o pedágio de exploração é pago em todos os passos e a
+              diferença acumulada domina. Com poucas execuções as curvas se cruzam por acaso —
+              vale reportar quantas execuções foram usadas.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 10 · Atividades">
+          <div class="ex" data-ex>
+            <span class="lab">Atividade 2 · o bandit que anda</span>
+            <p>Com <code>scripts/bandit_nao_estacionario.py</code>, varie σ e α e explique o que
+            você vê. Depois rode <code>--sigma 0 --inicio normal</code> e explique por que a
+            vantagem se inverte.</p>
+            <button class="b" type="button" data-reveal>O que responder</button>
+            <div class="sol" hidden>
+              <p>Além das curvas: por que a média amostral degrada, qual é a janela efetiva de
+              memória de α = 0,1 e o que acontece com α muito grande (0,8, por exemplo).</p>
+            </div>
+          </div>
+          <div class="ex" data-ex>
+            <span class="lab">Atividade 3 · implementar o UCB</span>
+            <p>Escreva a seleção UCB por conta própria — sem copiar a de
+            <code>scripts/bandit_metodos.py</code> — e varra
+            <span class="v">c</span> ∈ {0,5; 1; 2; 4}. Compare o seu resultado com o de
+            <code>scripts/bandit_varredura.py</code> e discuta o pico do começo da curva.</p>
+          </div>
+        </div>
+
+        <div class="slide" data-sec="§ 10 · Atividades">
+          <div class="note">
+            <span class="lab">Próxima aula</span>
+            <p>Devolvemos o estado ao problema. Vamos do <strong>processo de Markov</strong> ao
+            processo com recompensa, até chegar ao
+            <strong>processo de decisão de Markov</strong> — onde a ação volta a mudar o mundo e
+            a consequência volta a demorar.</p>
+          </div>
+          <h3>Material suplementar</h3>
+          <ul>
+            <li><a href="https://gibberblot.github.io/rl-notes/single-agent/multi-armed-bandits.html">Multi-armed bandits</a> — notas de Tim Miller.</li>
+            <li>Sutton &amp; Barto, <i>Reinforcement Learning: An Introduction</i>, capítulo 2.</li>
+            <li><a href="https://github.com/glauberrleite/curso-aprendizado-de-maquina/blob/main/02-multi-armed-bandit/README.md">Notas desta aula</a>, em Markdown.</li>
+            <li><a href="https://github.com/glauberrleite/curso-aprendizado-de-maquina/tree/main/02-multi-armed-bandit/scripts">Scripts em Python</a> — as políticas lado a lado, o bandit não estacionário e o estudo de parâmetros.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="hud" id="hud">
+  <span class="bar" id="hudBar"></span>
+  <span class="where" id="hudWhere"></span>
+  <span class="count" id="hudCount"></span>
+  <span class="sep"></span>
+  <button type="button" id="hudZoomOut" aria-label="Diminuir fonte">A−</button>
+  <span class="zoom" id="hudZoom">100%</span>
+  <button type="button" id="hudZoomIn" aria-label="Aumentar fonte">A+</button>
+  <span class="sep"></span>
+  <button type="button" id="hudPrev" aria-label="Slide anterior">←</button>
+  <button type="button" id="hudNext" aria-label="Próximo slide">→</button>
+  <button type="button" id="hudExit">Sair</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var TAU = Math.PI * 2;
+
+  function css(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
+  function $(id) { return document.getElementById(id); }
+  function num(x, d) { return x.toFixed(d === undefined ? 2 : d).replace(".", ","); }
+  function fam(varname) { return (css(varname).split(",")[0] || "sans-serif").replace(/"/g, ""); }
+
+  function wireSeg(id, cb) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener("click", function (ev) {
+      var b = ev.target.closest("button[data-k]");
+      if (!b) return;
+      Array.prototype.forEach.call(el.querySelectorAll("button[data-k]"), function (x) {
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      cb(b.getAttribute("data-k"));
+    });
+  }
+
+  function wireSld(id, outId, fmt, cb) {
+    var el = $(id), out = $(outId);
+    function upd() { out.textContent = fmt(parseFloat(el.value)); cb(parseFloat(el.value)); }
+    el.addEventListener("input", upd);
+    upd();
+  }
+
+  /* Devolve null quando o canvas não tem caixa de layout (slide oculto).
+     Sem isso o buffer encolheria para 1px e o CSS o esticaria depois. */
+  function fit(canvas) {
+    var r = canvas.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    return { ctx: ctx, w: r.width, h: r.height };
+  }
+
+  /* moldura de gráfico: devolve conversores de dados para pixels */
+  function eixos(ctx, f, x0, x1, y0, y1, rotX, rotY) {
+    var L = 46, R = 10, T = 24, B = 34;
+    var w = f.w - L - R, h = f.h - T - B;
+    ctx.save();
+    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h);
+    ctx.stroke();
+    ctx.fillStyle = css("--ink-mute");
+    ctx.font = "10px " + fam("--mono");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (var i = 0; i <= 4; i++) {
+      var vy = y0 + (y1 - y0) * i / 4, py = T + h - (h * i / 4);
+      ctx.fillText(num(vy, Math.abs(y1) >= 10 ? 0 : 1), L - 6, py);
+      if (i > 0) {
+        ctx.strokeStyle = css("--rule-soft");
+        ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(L + w, py); ctx.stroke();
+      }
+    }
+    ctx.textBaseline = "top";
+    for (var j = 0; j <= 4; j++) {
+      var vx = x0 + (x1 - x0) * j / 4, px = L + w * j / 4;
+      ctx.textAlign = j === 0 ? "left" : (j === 4 ? "right" : "center");
+      ctx.fillText(String(Math.round(vx)), px, T + h + 6);
+    }
+    ctx.font = "10px " + fam("--sans");
+    ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText(rotX, L + w, T + h + 20);
+    ctx.textAlign = "left"; ctx.fillText(rotY, 0, 4);
+    ctx.restore();
+    return {
+      x: function (v) { return L + w * (v - x0) / (x1 - x0); },
+      y: function (v) { return T + h - h * (v - y0) / (y1 - y0); },
+      L: L, T: T, w: w, h: h
+    };
+  }
+
+  /* legenda opaca, para não sumir dentro das curvas */
+  function legenda(ctx, g, labels, cores, tracejada) {
+    var lw = 0;
+    ctx.save();
+    ctx.font = "10px " + fam("--mono");
+    for (var i = 0; i < labels.length; i++) lw = Math.max(lw, ctx.measureText(labels[i]).width);
+    var bw = lw + 34, bh = labels.length * 14 + 8;
+    var lx = g.L + g.w - bw - 4, ly = g.T + g.h - bh - 4;
+    ctx.globalAlpha = .92; ctx.fillStyle = css("--surface");
+    ctx.fillRect(lx, ly, bw, bh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = css("--rule-soft"); ctx.lineWidth = 1;
+    ctx.strokeRect(lx, ly, bw, bh);
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (var k = 0; k < labels.length; k++) {
+      var yy = ly + 11 + k * 14;
+      ctx.strokeStyle = cores[k]; ctx.lineWidth = 2;
+      ctx.setLineDash(tracejada && tracejada[k] ? [4, 3] : []);
+      ctx.beginPath(); ctx.moveTo(lx + 7, yy); ctx.lineTo(lx + 23, yy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = cores[k];
+      ctx.fillText(labels[k], lx + 28, yy);
+    }
+    ctx.restore();
+  }
+
+  /* média móvel: só de exibição — os números da leitura vêm dos dados crus */
+  function suavizar(a, w) {
+    var n = a.length, out = new Float64Array(n), soma = 0, i;
+    for (i = 0; i < n; i++) {
+      soma += a[i];
+      if (i >= w) soma -= a[i - w];
+      out[i] = soma / Math.min(i + 1, w);
+    }
+    return out;
+  }
+
+  /* PRNG com semente: políticas diferentes veem os mesmos problemas */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(rng) {
+    var u = 1 - rng(), v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+  }
+  var rnd = Math.random;
+  function gaussM() {
+    var u = 1 - rnd(), v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+  }
+
+  /* argmax com empate sorteado */
+  function argmax(v, n) {
+    var a = 0, bv = v[0], cnt = 1;
+    for (var i = 1; i < n; i++) {
+      if (v[i] > bv) { bv = v[i]; a = i; cnt = 1; }
+      else if (v[i] === bv) { cnt++; if (rnd() < 1 / cnt) a = i; }
+    }
+    return a;
+  }
+
+  /* ---------------- tema ---------------- */
+  var themeBtn = $("themeBtn");
+  var modes = ["auto", "light", "dark"];
+  var labels = { auto: "Tema: automático", light: "Tema: claro", dark: "Tema: escuro" };
+  var mi = 0;
+  themeBtn.addEventListener("click", function () {
+    mi = (mi + 1) % modes.length;
+    var m = modes[mi];
+    if (m === "auto") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", m);
+    themeBtn.textContent = labels[m];
+    redrawAll();
+  });
+
+  /* ---------------- capa: cinco máquinas ---------------- */
+  var heroCanvas = $("heroCanvas");
+  var HQ = [0.85, -0.35, 1.45, 0.15, -1.0];
+  var hero = { sel: 2, ultimo: 0.0, tok: 0, marcado: 0 };
+  var heroT0 = 0;
+
+  function curvaNormal(ctx, cx, cy, esc, mu, cor, alpha) {
+    ctx.save();
+    ctx.strokeStyle = cor; ctx.globalAlpha = alpha; ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    for (var i = 0; i <= 40; i++) {
+      var z = -3 + 6 * i / 40;
+      var x = cx + (mu * 0.5 + z) * esc * 0.30;
+      var y = cy - Math.exp(-z * z / 2) * esc * 0.5;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    /* média verdadeira, marcada discretamente */
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(cx + mu * 0.5 * esc * 0.30, cy);
+    ctx.lineTo(cx + mu * 0.5 * esc * 0.30, cy - esc * 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function maquina(ctx, x, y, w, h, ativa) {
+    ctx.save();
+    ctx.strokeStyle = ativa ? css("--agente") : css("--rule");
+    ctx.lineWidth = ativa ? 1.8 : 1.2;
+    ctx.fillStyle = ativa ? css("--agente-bg") : css("--surface");
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.fill(); ctx.stroke();
+    /* visor */
+    ctx.fillStyle = css("--surface-2");
+    ctx.fillRect(x + w * 0.16, y + h * 0.2, w * 0.68, h * 0.34);
+    ctx.strokeStyle = css("--rule-soft"); ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.16 + w * 0.226, y + h * 0.2); ctx.lineTo(x + w * 0.16 + w * 0.226, y + h * 0.54);
+    ctx.moveTo(x + w * 0.16 + w * 0.453, y + h * 0.2); ctx.lineTo(x + w * 0.16 + w * 0.453, y + h * 0.54);
+    ctx.stroke();
+    /* alavanca */
+    ctx.strokeStyle = ativa ? css("--agente") : css("--ink-mute");
+    ctx.lineWidth = 1.6;
+    var lx = x + w + 3, ly = y + h * 0.30;
+    ctx.beginPath();
+    ctx.moveTo(x + w, y + h * 0.5);
+    ctx.lineTo(lx, ativa ? y + h * 0.52 : ly);
+    ctx.stroke();
+    ctx.fillStyle = ativa ? css("--agente") : css("--ink-mute");
+    ctx.beginPath(); ctx.arc(lx, ativa ? y + h * 0.52 : ly, 3, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawHero(now) {
+    var f = fit(heroCanvas);
+    if (!f) return;
+    var ctx = f.ctx, w = f.w, h = f.h;
+    var n = HQ.length;
+    var mw = Math.min(86, (w - 40) / n - 22), mh = Math.min(58, h * 0.34);
+    var gap = (w - 40 - n * mw) / (n - 1);
+    var y = h - mh - 30;
+
+    for (var i = 0; i < n; i++) {
+      var x = 20 + i * (mw + gap);
+      curvaNormal(ctx, x + mw / 2, y - 16, mw, HQ[i], css("--ambiente"), i === hero.sel ? .95 : .5);
+      maquina(ctx, x, y, mw, mh, i === hero.sel);
+      ctx.save();
+      ctx.fillStyle = i === hero.sel ? css("--agente") : css("--ink-mute");
+      ctx.font = "10px " + fam("--mono");
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText("a = " + (i + 1), x + mw / 2, y + mh + 6);
+      ctx.restore();
+    }
+
+    /* recompensa subindo da máquina acionada */
+    if (hero.tok > 0) {
+      var xs = 20 + hero.sel * (mw + gap) + mw / 2;
+      var p = 1 - hero.tok;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, hero.tok * 2.2);
+      ctx.fillStyle = css("--recompensa");
+      ctx.font = "600 13px " + fam("--mono");
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText((hero.ultimo >= 0 ? "+" : "") + num(hero.ultimo), xs, y + mh * 0.42 - p * 26);
+      ctx.restore();
+    }
+  }
+
+  function heroTick(now) {
+    if (!heroT0) heroT0 = now;
+    var dt = Math.min(64, now - heroT0);
+    heroT0 = now;
+    hero.tok = Math.max(0, hero.tok - dt / 1300);
+    hero.marcado += dt;
+    if (hero.marcado > 1500) {
+      hero.marcado = 0;
+      var novo = hero.sel;
+      while (novo === hero.sel) novo = (rnd() * HQ.length) | 0;
+      hero.sel = novo;
+      hero.ultimo = HQ[novo] + gaussM();
+      hero.tok = 1;
+    }
+    drawHero(now);
+    requestAnimationFrame(heroTick);
+  }
+
+  /* ---------------- § 02 · cinco máquinas na mão ---------------- */
+  var MK = 5;
+  var maq = { q: [], Q: [], N: [], t: 0, soma: 0, rev: false, melhor: 0 };
+
+  function maqNovo() {
+    maq.q = []; maq.Q = []; maq.N = [];
+    maq.t = 0; maq.soma = 0; maq.rev = false;
+    for (var i = 0; i < MK; i++) { maq.q.push(gaussM()); maq.Q.push(0); maq.N.push(0); }
+    maq.melhor = 0;
+    for (i = 1; i < MK; i++) if (maq.q[i] > maq.q[maq.melhor]) maq.melhor = i;
+    $("maqRev").textContent = "Revelar q(a)";
+    maqUpd();
+  }
+
+  function maqJogar(a) {
+    var r = maq.q[a] + gaussM();
+    maq.N[a] += 1;
+    maq.Q[a] += (r - maq.Q[a]) / maq.N[a];
+    maq.t += 1; maq.soma += r;
+  }
+
+  function maqUpd() {
+    $("maqT").textContent = maq.t;
+    $("maqMed").textContent = maq.t ? num(maq.soma / maq.t) : "—";
+    var am = argmax(maq.Q, MK);
+    $("maqArg").textContent = maq.t ? "a = " + (am + 1) : "—";
+    $("maqOk").textContent = !maq.t ? "—" : (maq.rev ? (am === maq.melhor ? "sim" : "não") : "?");
+    var msg = $("maqMsg");
+    var minN = Math.min.apply(null, maq.N);
+    if (!maq.t) {
+      msg.className = "verdict rec";
+      msg.textContent = "Jogue algumas vezes em cada máquina e veja as estimativas se assentarem.";
+    } else if (maq.rev) {
+      msg.className = am === maq.melhor ? "verdict ok" : "verdict bad";
+      msg.textContent = am === maq.melhor
+        ? "A maior estimativa é mesmo a melhor máquina (a = " + (maq.melhor + 1) + "), com q = " + num(maq.q[maq.melhor]) + "."
+        : "A maior estimativa aponta a = " + (am + 1) + ", mas a melhor é a = " + (maq.melhor + 1) + " (q = " + num(maq.q[maq.melhor]) + "). Falta tentativa em quem foi pouco jogado.";
+    } else if (minN === 0) {
+      msg.className = "verdict bad";
+      msg.textContent = "Há máquina com N(a) = 0: sobre ela não existe informação nenhuma — a estimativa é só o valor padrão.";
+    } else {
+      msg.className = "verdict rec";
+      msg.textContent = "Menor N(a) = " + minN + ". Quanto menor, menos confiável é aquela barra — este é o dado que o UCB vai usar no § 08.";
+    }
+    drawMaq();
+  }
+
+  function drawMaq() {
+    var f = fit($("maqCanvas"));
+    if (!f) return;
+    var ctx = f.ctx, w = f.w, h = f.h;
+    var pad = 34, topo = 16, base = h - 34;
+    var bw = (w - 2 * pad) / MK * 0.56;
+    var passo = (w - 2 * pad) / MK;
+    var YMAX = 2.6;
+    var zero = topo + (base - topo) * (YMAX / (2 * YMAX));
+    function py(v) { return zero - (v / YMAX) * (base - topo) / 2; }
+
+    ctx.save();
+    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad - 12, zero); ctx.lineTo(w - pad + 12, zero); ctx.stroke();
+    ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--mono");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText("0", pad - 16, zero);
+    ctx.fillText("+2", pad - 16, py(2));
+    ctx.fillText("−2", pad - 16, py(-2));
+    ctx.restore();
+
+    var am = maq.t ? argmax(maq.Q, MK) : -1;
+    for (var i = 0; i < MK; i++) {
+      var cx = pad + passo * (i + 0.5);
+      var v = maq.Q[i];
+      var y0 = py(0), y1 = py(v);
+      ctx.save();
+      ctx.fillStyle = css("--agente");
+      ctx.globalAlpha = maq.N[i] === 0 ? .18 : (i === am ? 1 : .62);
+      ctx.fillRect(cx - bw / 2, Math.min(y0, y1), bw, Math.abs(y1 - y0) + 0.5);
+      ctx.restore();
+
+      if (maq.rev) {
+        ctx.save();
+        ctx.strokeStyle = css("--recompensa"); ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx - bw / 2 - 6, py(maq.q[i])); ctx.lineTo(cx + bw / 2 + 6, py(maq.q[i]));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = i === am ? css("--agente") : css("--ink-mute");
+      ctx.font = "10px " + fam("--mono"); ctx.textBaseline = "top";
+      ctx.fillText("a = " + (i + 1), cx, base + 6);
+      ctx.fillStyle = css("--ink-mute");
+      ctx.fillText("N = " + maq.N[i], cx, base + 19);
+      if (maq.N[i] > 0) {
+        ctx.fillStyle = css("--agente");
+        ctx.textBaseline = v >= 0 ? "bottom" : "top";
+        ctx.fillText(num(v), cx, v >= 0 ? py(v) - 3 : py(v) + 3);
+      }
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--sans");
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("Q(a) — estimativa", 2, 2);
+    if (maq.rev) {
+      ctx.fillStyle = css("--recompensa");
+      ctx.textAlign = "right";
+      ctx.fillText("q(a) — valor verdadeiro", w - 2, 2);
+    }
+    ctx.restore();
+  }
+
+  $("maqCanvas").addEventListener("click", function (ev) {
+    var r = this.getBoundingClientRect();
+    var pad = 34, passo = (r.width - 2 * pad) / MK;
+    var i = Math.floor((ev.clientX - r.left - pad) / passo);
+    if (i < 0 || i >= MK) return;
+    maqJogar(i);
+    maqUpd();
+  });
+  $("maqAuto").addEventListener("click", function () {
+    for (var i = 0; i < 25; i++) maqJogar((rnd() * MK) | 0);
+    maqUpd();
+  });
+  $("maqGul").addEventListener("click", function () {
+    for (var i = 0; i < 25; i++) maqJogar(argmax(maq.Q, MK));
+    maqUpd();
+  });
+  $("maqRev").addEventListener("click", function () {
+    maq.rev = !maq.rev;
+    this.textContent = maq.rev ? "Esconder q(a)" : "Revelar q(a)";
+    maqUpd();
+  });
+  $("maqReset").addEventListener("click", maqNovo);
+
+  /* ---------------- § 05 · peso das observações ---------------- */
+  var pes = { a: 0.10, k: 40 };
+
+  function drawPes() {
+    var f = fit($("pesCanvas"));
+    if (!f) return;
+    var ctx = f.ctx, w = f.w, h = f.h;
+    var k = pes.k, al = pes.a;
+    var wmax = Math.max(1 / k, al) * 1.15;
+    var L = 40, R = 8, T = 14, B = 26;
+    var pw = w - L - R, ph = h - T - B;
+    var passo = pw / k, bw = Math.min(9, passo * 0.38);
+
+    ctx.save();
+    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + ph); ctx.lineTo(L + pw, T + ph); ctx.stroke();
+    ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--mono");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText(num(wmax), L - 5, T);
+    ctx.fillText("0", L - 5, T + ph);
+    ctx.restore();
+
+    for (var i = 1; i <= k; i++) {
+      var cx = L + passo * (i - 0.5);
+      var wu = 1 / k;                                   /* média amostral */
+      var wa = al * Math.pow(1 - al, k - i);            /* passo constante */
+      ctx.save();
+      ctx.fillStyle = css("--ink-mute"); ctx.globalAlpha = .55;
+      ctx.fillRect(cx - bw - 1, T + ph - ph * wu / wmax, bw, ph * wu / wmax);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = css("--agente");
+      ctx.fillRect(cx + 1, T + ph - ph * wa / wmax, bw, ph * wa / wmax);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--sans");
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("mais antiga", L, T + ph + 6);
+    ctx.textAlign = "right";
+    ctx.fillText("mais recente", L + pw, T + ph + 6);
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillStyle = css("--ink-mute");
+    ctx.fillText("■ passo 1/k", L + 4, T + 2);
+    ctx.fillStyle = css("--agente");
+    ctx.fillText("■ passo α", L + 74, T + 2);
+    ctx.restore();
+  }
+
+  function updPes() {
+    var al = pes.a, k = pes.k;
+    $("pesU").textContent = num(1 / k, 3);
+    $("pesA").textContent = num(al, 3);
+    var meia = Math.log(0.5) / Math.log(1 - al);
+    $("pesH").textContent = num(meia, 1) + " passos";
+    var w0 = Math.pow(1 - al, k);
+    $("pesQ0").textContent = num(100 * w0, 1) + "%";
+    var msg = $("pesMsg");
+    msg.className = "verdict ok";
+    msg.textContent = "Com α = " + num(al) + ", metade do peso está nas últimas " + num(meia, 1) +
+      " recompensas. Com 1/k todas as " + k + " pesam igual — inclusive a primeira, tirada quando o agente não sabia nada.";
+    drawPes();
+  }
+
+  wireSld("pesAlpha", "pesAlphaOut", function (v) { return num(v); }, function (v) { pes.a = v; updPes(); });
+  wireSld("pesK", "pesKOut", function (v) { return String(v); }, function (v) { pes.k = v; updPes(); });
+
+  /* ---------------- § 04 · testbed de 10 braços ---------------- */
+  var ban = { modo: "rec", eps: 0.30, dados: null };
+
+  function rodarBandit() {
+    var K = 10, RUNS = 200, STEPS = 1000;
+    var eps = [0, 0.01, 0.1, ban.eps];
+    var rec = [], opt = [], e, t, i;
+    for (e = 0; e < eps.length; e++) { rec.push(new Float64Array(STEPS)); opt.push(new Float64Array(STEPS)); }
+
+    for (e = 0; e < eps.length; e++) {
+      var rng = mulberry32(20250824);
+      for (var run = 0; run < RUNS; run++) {
+        var q = new Float64Array(K), Q = new Float64Array(K), N = new Float64Array(K);
+        var best = 0;
+        for (i = 0; i < K; i++) { q[i] = gauss(rng); if (q[i] > q[best]) best = i; }
+        for (t = 0; t < STEPS; t++) {
+          var a;
+          if (rng() < eps[e]) {
+            a = (rng() * K) | 0;
+          } else {
+            a = 0; var bv = Q[0], cnt = 1;
+            for (i = 1; i < K; i++) {
+              if (Q[i] > bv) { bv = Q[i]; a = i; cnt = 1; }
+              else if (Q[i] === bv) { cnt++; if (rng() < 1 / cnt) a = i; }
+            }
+          }
+          var r = q[a] + gauss(rng);
+          N[a] += 1;
+          Q[a] += (r - Q[a]) / N[a];
+          rec[e][t] += r;
+          if (a === best) opt[e][t] += 1;
+        }
+      }
+      for (t = 0; t < STEPS; t++) { rec[e][t] /= RUNS; opt[e][t] = 100 * opt[e][t] / RUNS; }
+    }
+    ban.dados = { eps: eps, rec: rec, opt: opt };
+
+    var ids = ["banV0", "banV1", "banV2", "banV3"];
+    for (e = 0; e < 4; e++) {
+      var serie = ban.modo === "rec" ? rec[e] : opt[e], s = 0;
+      for (t = STEPS - 100; t < STEPS; t++) s += serie[t];
+      s /= 100;
+      $(ids[e]).textContent = ban.modo === "rec" ? num(s) : num(s, 0) + "%";
+    }
+    $("banMsg").textContent = ban.modo === "rec"
+      ? "Leitura: recompensa média nos últimos 100 passos. O ótimo alcançável ronda 1,55 — o melhor braço médio de 10 sorteios normais padrão."
+      : "Leitura: fração de passos em que a ação escolhida era a melhor. Nenhuma curva chega a 100% — o ε-guloso explora para sempre.";
+  }
+
+  function drawBan() {
+    var f = fit($("banCanvas"));
+    if (!f) return;
+    var ctx = f.ctx;
+    var rec = ban.modo === "rec";
+    var ymax = rec ? 1.6 : 100;
+    var g = eixos(ctx, f, 0, 1000, 0, ymax, "passos", rec ? "recompensa média" : "% ação ótima");
+    if (!ban.dados) {
+      ctx.save();
+      ctx.fillStyle = css("--ink-mute"); ctx.font = "12px " + fam("--sans");
+      ctx.textAlign = "center";
+      ctx.fillText("clique em “Rodar”", g.L + g.w / 2, g.T + g.h / 2);
+      ctx.restore();
+      return;
+    }
+    var cores = [css("--ink-mute"), css("--ambiente"), css("--recompensa"), css("--agente")];
+    var series = rec ? ban.dados.rec : ban.dados.opt;
+    for (var e = 0; e < series.length; e++) {
+      var curva = suavizar(series[e], 25);
+      ctx.save();
+      ctx.strokeStyle = cores[e]; ctx.lineWidth = e === 3 ? 1.4 : 1.8;
+      if (e === 3) ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      for (var t = 0; t < 1000; t += 2) {
+        var X = g.x(t), Y = g.y(Math.min(curva[t], ymax));
+        if (t === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+    legenda(ctx, g, ["ε = 0", "ε = 0,01", "ε = 0,1", "ε = " + num(ban.eps)], cores, [0, 0, 0, 1]);
+  }
+
+  $("banRun").addEventListener("click", function () {
+    this.disabled = true;
+    var b = this;
+    setTimeout(function () { rodarBandit(); drawBan(); b.disabled = false; }, 10);
+  });
+  wireSeg("banSeg", function (k) {
+    ban.modo = k;
+    if (ban.dados) rodarBandit();
+    drawBan();
+  });
+  wireSld("banEps", "banEpsOut", function (v) { return num(v); }, function (v) {
+    ban.eps = v;
+    if (ban.dados) { rodarBandit(); drawBan(); }
+  });
+
+  /* ---------------- § 06 · testbed não estacionário ---------------- */
+  var ns = { modo: "rec", alpha: 0.10, sig: 0.01, dados: null, passeio: null };
+  var NS_STEPS = 5000;
+
+  function rodarNS() {
+    var K = 10, RUNS = 100, STEPS = NS_STEPS, EPS = 0.1;
+    var rec = [new Float64Array(STEPS), new Float64Array(STEPS)];
+    var opt = [new Float64Array(STEPS), new Float64Array(STEPS)];
+    var m, t, i;
+
+    for (m = 0; m < 2; m++) {                       /* 0 = média amostral, 1 = α constante */
+      var rng = mulberry32(31415926);
+      for (var run = 0; run < RUNS; run++) {
+        var q = new Float64Array(K), Q = new Float64Array(K), N = new Float64Array(K);
+        for (t = 0; t < STEPS; t++) {
+          for (i = 0; i < K; i++) q[i] += ns.sig * gauss(rng);   /* o problema anda */
+          var best = 0;
+          for (i = 1; i < K; i++) if (q[i] > q[best]) best = i;
+          var a;
+          if (rng() < EPS) {
+            a = (rng() * K) | 0;
+          } else {
+            a = 0; var bv = Q[0], cnt = 1;
+            for (i = 1; i < K; i++) {
+              if (Q[i] > bv) { bv = Q[i]; a = i; cnt = 1; }
+              else if (Q[i] === bv) { cnt++; if (rng() < 1 / cnt) a = i; }
+            }
+          }
+          var r = q[a] + gauss(rng);
+          N[a] += 1;
+          Q[a] += (m === 0 ? 1 / N[a] : ns.alpha) * (r - Q[a]);
+          rec[m][t] += r;
+          if (a === best) opt[m][t] += 1;
+        }
+      }
+      for (t = 0; t < STEPS; t++) { rec[m][t] /= RUNS; opt[m][t] = 100 * opt[m][t] / RUNS; }
+    }
+    ns.dados = { rec: rec, opt: opt };
+
+    /* um passeio de exemplo, para o terceiro modo */
+    var rng2 = mulberry32(2718281), traj = [];
+    for (i = 0; i < K; i++) traj.push(new Float64Array(STEPS));
+    var atual = new Float64Array(K);
+    for (t = 0; t < STEPS; t++) {
+      for (i = 0; i < K; i++) { atual[i] += ns.sig * gauss(rng2); traj[i][t] = atual[i]; }
+    }
+    ns.passeio = traj;
+
+    var v0 = 0, v1 = 0;
+    var s0 = ns.modo === "opt" ? opt[0] : rec[0], s1 = ns.modo === "opt" ? opt[1] : rec[1];
+    for (t = STEPS - 100; t < STEPS; t++) { v0 += s0[t]; v1 += s1[t]; }
+    v0 /= 100; v1 /= 100;
+    var suf = ns.modo === "opt" ? "%" : "";
+    $("nsV0").textContent = num(v0, ns.modo === "opt" ? 0 : 2) + suf;
+    $("nsV1").textContent = num(v1, ns.modo === "opt" ? 0 : 2) + suf;
+    $("nsV2").textContent = (v1 - v0 >= 0 ? "+" : "") + num(v1 - v0, ns.modo === "opt" ? 0 : 2) + suf;
+
+    var msg = $("nsMsg");
+    if (ns.sig === 0) {
+      msg.className = "verdict bad";
+      msg.textContent = "Com σ = 0 o problema é estacionário e a média amostral ganha: ela converge, o passo constante fica balançando no ruído.";
+    } else if (v1 > v0) {
+      msg.className = "verdict ok";
+      msg.textContent = "O passo constante leva vantagem de " + num(v1 - v0, ns.modo === "opt" ? 0 : 2) + suf +
+        " nos últimos 100 passos: ele esquece o que envelheceu. Ambas usam ε = 0,1.";
+    } else {
+      msg.className = "verdict bad";
+      msg.textContent = "Neste ajuste a média amostral ainda segura o resultado — a deriva é pequena demais para o horizonte de " + STEPS + " passos.";
+    }
+  }
+
+  function drawNS() {
+    var f = fit($("nsCanvas"));
+    if (!f) return;
+    var ctx = f.ctx;
+
+    if (ns.modo === "walk") {
+      var lim = 3;
+      if (ns.passeio) {
+        for (var w1 = 0; w1 < ns.passeio.length; w1++) {
+          for (var w2 = 0; w2 < NS_STEPS; w2 += 25) {
+            var av = Math.abs(ns.passeio[w1][w2]);
+            if (av > lim) lim = av;
+          }
+        }
+        lim = Math.ceil(lim);
+      }
+      var gw = eixos(ctx, f, 0, NS_STEPS, -lim, lim, "passos", "q(a) verdadeiro");
+      if (!ns.passeio) {
+        ctx.save(); ctx.fillStyle = css("--ink-mute"); ctx.font = "12px " + fam("--sans");
+        ctx.textAlign = "center"; ctx.fillText("clique em “Rodar”", gw.L + gw.w / 2, gw.T + gw.h / 2);
+        ctx.restore(); return;
+      }
+      ctx.save();
+      ctx.lineWidth = 1.2;
+      for (var i = 0; i < ns.passeio.length; i++) {
+        ctx.strokeStyle = i % 2 ? css("--ambiente") : css("--recompensa");
+        ctx.globalAlpha = .75;
+        ctx.beginPath();
+        for (var t = 0; t < NS_STEPS; t += 4) {
+          var Y = gw.y(Math.max(-lim, Math.min(lim, ns.passeio[i][t])));
+          if (t === 0) ctx.moveTo(gw.x(t), Y); else ctx.lineTo(gw.x(t), Y);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--sans");
+      ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillText("os 10 braços de uma execução: quem é o melhor muda de dono", gw.L + 4, gw.T + gw.h - 4);
+      ctx.restore();
+      return;
+    }
+
+    var rec = ns.modo === "rec";
+    var topoY = 100;
+    if (rec) {
+      topoY = 1;
+      if (ns.dados) {
+        for (var m0 = 0; m0 < 2; m0++) {
+          var c0 = suavizar(ns.dados.rec[m0], 60);
+          for (var t0 = 60; t0 < NS_STEPS; t0 += 20) if (c0[t0] > topoY) topoY = c0[t0];
+        }
+        topoY = Math.ceil(topoY * 1.15 * 2) / 2;
+      }
+    }
+    var g = eixos(ctx, f, 0, NS_STEPS, rec ? 0 : 0, topoY, "passos", rec ? "recompensa média" : "% ação ótima");
+    if (!ns.dados) {
+      ctx.save(); ctx.fillStyle = css("--ink-mute"); ctx.font = "12px " + fam("--sans");
+      ctx.textAlign = "center"; ctx.fillText("clique em “Rodar”", g.L + g.w / 2, g.T + g.h / 2);
+      ctx.restore(); return;
+    }
+    var cores = [css("--ambiente"), css("--agente")];
+    var series = rec ? ns.dados.rec : ns.dados.opt;
+    for (var m = 0; m < 2; m++) {
+      var curva = suavizar(series[m], 60);
+      ctx.save();
+      ctx.strokeStyle = cores[m]; ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      for (var s = 0; s < NS_STEPS; s += 3) {
+        var X = g.x(s), Y = g.y(curva[s]);
+        if (s === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+    legenda(ctx, g, ["1/N", "α = " + num(ns.alpha)], cores);
+  }
+
+  $("nsRun").addEventListener("click", function () {
+    this.disabled = true;
+    var b = this;
+    setTimeout(function () { rodarNS(); drawNS(); b.disabled = false; }, 10);
+  });
+  wireSeg("nsSeg", function (k) {
+    ns.modo = k;
+    if (ns.dados && k !== "walk") rodarNS();
+    drawNS();
+  });
+  wireSld("nsAlpha", "nsAlphaOut", function (v) { return num(v); }, function (v) {
+    ns.alpha = v; if (ns.dados) { rodarNS(); } drawNS();
+  });
+  wireSld("nsSig", "nsSigOut", function (v) { return num(v, 3); }, function (v) {
+    ns.sig = v; if (ns.dados) { rodarNS(); } drawNS();
+  });
+
+  /* ---------------- § 08 · o bônus braço a braço ---------------- */
+  var BK = 10;
+  var bon = { q: [], Q: [], N: [], t: 0, c: 2, otimas: 0, melhor: 0, a: -1, b: 0, timer: 0, auto: false };
+
+  function bonReset() {
+    bon.q = []; bon.Q = []; bon.N = [];
+    bon.t = 0; bon.otimas = 0; bon.a = -1; bon.b = 0;
+    for (var i = 0; i < BK; i++) { bon.q.push(gaussM()); bon.Q.push(0); bon.N.push(0); }
+    bon.melhor = 0;
+    for (i = 1; i < BK; i++) if (bon.q[i] > bon.q[bon.melhor]) bon.melhor = i;
+    bonUpd();
+  }
+
+  function bonBonus(i) {
+    if (bon.N[i] === 0) return Infinity;
+    if (bon.c === 0) return 0;
+    return bon.c * Math.sqrt(Math.log(bon.t + 1) / bon.N[i]);
+  }
+
+  function bonPasso() {
+    var val = [], i;
+    for (i = 0; i < BK; i++) {
+      var b = bonBonus(i);
+      val.push(b === Infinity ? 1e9 - i : bon.Q[i] + b);
+    }
+    var a = argmax(val, BK);
+    var r = bon.q[a] + gaussM();
+    bon.N[a] += 1;
+    bon.Q[a] += (r - bon.Q[a]) / bon.N[a];
+    bon.t += 1;
+    if (a === bon.melhor) bon.otimas += 1;
+    bon.a = a;
+    var bb = bonBonus(a);
+    bon.b = isFinite(bb) ? bb : 0;
+  }
+
+  function bonUpd() {
+    $("bonT").textContent = bon.t;
+    $("bonA").textContent = bon.a < 0 ? "—" : "a = " + (bon.a + 1);
+    $("bonB").textContent = bon.a < 0 ? "—" : num(bon.b);
+    $("bonO").textContent = bon.t ? num(100 * bon.otimas / bon.t, 0) + "%" : "—";
+    var msg = $("bonMsg");
+    var faltam = 0;
+    for (var i = 0; i < BK; i++) if (bon.N[i] === 0) faltam++;
+    if (faltam > 0) {
+      msg.className = "verdict rec";
+      msg.textContent = "Ainda há " + faltam + " braço(s) com N(a) = 0 — bônus infinito, então eles maximizam. O UCB começa varrendo tudo.";
+    } else if (bon.c === 0) {
+      msg.className = "verdict bad";
+      msg.textContent = "Com c = 0 o bônus some e sobra o guloso puro: a escolha nunca mais sai da barra mais alta.";
+    } else {
+      msg.className = "verdict ok";
+      msg.textContent = "Barra violeta = Q(a); a parte âmbar em cima é o bônus. Repare que ele encolhe justamente nos braços mais jogados.";
+    }
+    drawBon();
+  }
+
+  function drawBon() {
+    var f = fit($("bonCanvas"));
+    if (!f) return;
+    var ctx = f.ctx, w = f.w, h = f.h;
+    var pad = 34, topo = 18, base = h - 32;
+    var passo = (w - 2 * pad) / BK, bw = passo * 0.5;
+
+    var maxv = 2.2, i;
+    for (i = 0; i < BK; i++) {
+      var b = bonBonus(i);
+      var v = bon.Q[i] + (isFinite(b) ? b : 3);
+      if (v > maxv) maxv = v;
+      if (bon.q[i] > maxv) maxv = bon.q[i];
+    }
+    maxv = Math.min(6, maxv * 1.08);
+    var minv = -2.2;
+    for (i = 0; i < BK; i++) if (bon.Q[i] < minv) minv = bon.Q[i] * 1.1;
+    function py(v) { return base - (Math.max(minv, Math.min(maxv, v)) - minv) / (maxv - minv) * (base - topo); }
+
+    ctx.save();
+    ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad - 14, py(0)); ctx.lineTo(w - pad + 14, py(0)); ctx.stroke();
+    ctx.fillStyle = css("--ink-mute"); ctx.font = "10px " + fam("--mono");
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText("0", pad - 18, py(0));
+    ctx.fillText(num(maxv, 1), pad - 18, py(maxv));
+    ctx.restore();
+
+    for (i = 0; i < BK; i++) {
+      var cx = pad + passo * (i + 0.5);
+      var bo = bonBonus(i);
+      var infinito = !isFinite(bo);
+      var y0 = py(0), yq = py(bon.Q[i]);
+      /* estimativa */
+      ctx.save();
+      ctx.fillStyle = css("--agente");
+      ctx.globalAlpha = i === bon.a ? 1 : .55;
+      ctx.fillRect(cx - bw / 2, Math.min(y0, yq), bw, Math.abs(yq - y0) + 0.5);
+      ctx.restore();
+      /* bônus, empilhado */
+      var topoB = infinito ? topo : py(bon.Q[i] + bo);
+      ctx.save();
+      ctx.globalAlpha = i === bon.a ? .95 : .5;
+      if (infinito) {
+        ctx.strokeStyle = css("--recompensa"); ctx.lineWidth = 1.4;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(cx - bw / 2, topo, bw, yq - topo);
+        ctx.setLineDash([]);
+        ctx.fillStyle = css("--recompensa");
+        ctx.font = "600 12px " + fam("--mono");
+        ctx.textAlign = "center"; ctx.textBaseline = "top";
+        ctx.fillText("∞", cx, topo + 2);
+      } else {
+        ctx.fillStyle = css("--recompensa");
+        ctx.fillRect(cx - bw / 2, topoB, bw, yq - topoB);
+      }
+      ctx.restore();
+      /* valor verdadeiro */
+      ctx.save();
+      ctx.strokeStyle = css("--ambiente"); ctx.lineWidth = 1.6; ctx.globalAlpha = .8;
+      ctx.beginPath();
+      ctx.moveTo(cx - bw / 2 - 4, py(bon.q[i])); ctx.lineTo(cx + bw / 2 + 4, py(bon.q[i]));
+      ctx.stroke();
+      ctx.restore();
+      /* rótulos */
+      ctx.save();
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.font = "10px " + fam("--mono");
+      ctx.fillStyle = i === bon.a ? css("--agente") : css("--ink-mute");
+      ctx.fillText(String(i + 1), cx, base + 5);
+      ctx.fillStyle = css("--ink-mute");
+      ctx.fillText(String(bon.N[i]), cx, base + 17);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.font = "10px " + fam("--sans"); ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillStyle = css("--agente"); ctx.fillText("■ Q(a)", 2, 2);
+    ctx.fillStyle = css("--recompensa"); ctx.fillText("■ bônus", 52, 2);
+    ctx.fillStyle = css("--ambiente"); ctx.fillText("— q(a)", 108, 2);
+    ctx.fillStyle = css("--ink-mute");
+    ctx.textAlign = "right"; ctx.fillText("linha de baixo: N(a)", w - 2, 2);
+    ctx.restore();
+  }
+
+  $("bonStep").addEventListener("click", function () { bonPasso(); bonUpd(); });
+  $("bonJump").addEventListener("click", function () {
+    for (var i = 0; i < 25; i++) bonPasso();
+    bonUpd();
+  });
+  $("bonAuto").addEventListener("click", function () {
+    bon.auto = !bon.auto;
+    this.textContent = bon.auto ? "Parar" : "Automático";
+    if (bon.auto) bon.timer = setInterval(function () { bonPasso(); bonUpd(); }, 260);
+    else clearInterval(bon.timer);
+  });
+  $("bonReset").addEventListener("click", function () {
+    bon.auto = false; clearInterval(bon.timer); $("bonAuto").textContent = "Automático";
+    bonReset();
+  });
+  wireSld("bonC", "bonCOut", function (v) { return num(v, 1); }, function (v) { bon.c = v; if (bon.q.length) bonUpd(); });
+
+  /* ---------------- § 08 · comparação geral ---------------- */
+  var cmp = { modo: "rec", c: 2, dados: null };
+
+  function rodarCmp() {
+    var K = 10, RUNS = 200, STEPS = 1000, P = 4;
+    var rec = [], opt = [], p, t, i;
+    for (p = 0; p < P; p++) { rec.push(new Float64Array(STEPS)); opt.push(new Float64Array(STEPS)); }
+
+    for (p = 0; p < P; p++) {
+      var rng = mulberry32(20250824);
+      for (var run = 0; run < RUNS; run++) {
+        var q = new Float64Array(K), Q = new Float64Array(K), N = new Float64Array(K);
+        var best = 0;
+        for (i = 0; i < K; i++) { q[i] = gauss(rng); if (q[i] > q[best]) best = i; }
+        if (p === 2) for (i = 0; i < K; i++) Q[i] = 5;          /* início otimista */
+        for (t = 0; t < STEPS; t++) {
+          var a = 0, bv = -Infinity, cnt = 1, v;
+          if (p === 1 && rng() < 0.1) {
+            a = (rng() * K) | 0;
+          } else {
+            for (i = 0; i < K; i++) {
+              if (p === 3) {
+                v = N[i] === 0 ? 1e9 - i : Q[i] + cmp.c * Math.sqrt(Math.log(t + 1) / N[i]);
+              } else {
+                v = Q[i];
+              }
+              if (v > bv) { bv = v; a = i; cnt = 1; }
+              else if (v === bv) { cnt++; if (rng() < 1 / cnt) a = i; }
+            }
+          }
+          var r = q[a] + gauss(rng);
+          N[a] += 1;
+          Q[a] += (p === 2 ? 0.1 : 1 / N[a]) * (r - Q[a]);
+          rec[p][t] += r;
+          if (a === best) opt[p][t] += 1;
+        }
+      }
+      for (t = 0; t < STEPS; t++) { rec[p][t] /= RUNS; opt[p][t] = 100 * opt[p][t] / RUNS; }
+    }
+    cmp.dados = { rec: rec, opt: opt };
+
+    var ids = ["cmpV0", "cmpV1", "cmpV2", "cmpV3"];
+    for (p = 0; p < P; p++) {
+      var serie = cmp.modo === "rec" ? rec[p] : opt[p], s = 0;
+      for (t = STEPS - 100; t < STEPS; t++) s += serie[t];
+      s /= 100;
+      $(ids[p]).textContent = cmp.modo === "rec" ? num(s) : num(s, 0) + "%";
+    }
+    $("cmpMsg").className = "verdict ok";
+    $("cmpMsg").textContent = "Leitura: média dos últimos 100 passos. O UCB costuma vencer com c ≈ 2 — e repare no pico agudo dele lá no passo 10, quando termina a varredura inicial.";
+  }
+
+  function drawCmp() {
+    var f = fit($("cmpCanvas"));
+    if (!f) return;
+    var ctx = f.ctx;
+    var rec = cmp.modo === "rec";
+    var g = eixos(ctx, f, 0, 1000, 0, rec ? 1.6 : 100, "passos", rec ? "recompensa média" : "% ação ótima");
+    if (!cmp.dados) {
+      ctx.save(); ctx.fillStyle = css("--ink-mute"); ctx.font = "12px " + fam("--sans");
+      ctx.textAlign = "center"; ctx.fillText("clique em “Rodar”", g.L + g.w / 2, g.T + g.h / 2);
+      ctx.restore(); return;
+    }
+    var cores = [css("--ink-mute"), css("--recompensa"), css("--ambiente"), css("--agente")];
+    var series = rec ? cmp.dados.rec : cmp.dados.opt;
+    for (var p = 0; p < series.length; p++) {
+      var curva = suavizar(series[p], 20);
+      ctx.save();
+      ctx.strokeStyle = cores[p]; ctx.lineWidth = p === 3 ? 2 : 1.6;
+      ctx.beginPath();
+      for (var t = 0; t < 1000; t += 2) {
+        var X = g.x(t), Y = g.y(Math.min(curva[t], rec ? 1.6 : 100));
+        if (t === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+    legenda(ctx, g, ["guloso", "ε = 0,1", "Q₁ = 5", "UCB c = " + num(cmp.c, 1)], cores);
+  }
+
+  $("cmpRun").addEventListener("click", function () {
+    this.disabled = true;
+    var b = this;
+    setTimeout(function () { rodarCmp(); drawCmp(); b.disabled = false; }, 10);
+  });
+  wireSeg("cmpSeg", function (k) {
+    cmp.modo = k;
+    if (cmp.dados) rodarCmp();
+    drawCmp();
+  });
+  wireSld("cmpC", "cmpCOut", function (v) { return num(v, 1); }, function (v) {
+    cmp.c = v;
+    if (cmp.dados) { rodarCmp(); }
+    drawCmp();
+  });
+
+  /* ---------------- exercícios ---------------- */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-reveal]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var sol = btn.parentNode.querySelector(".sol");
+      if (sol.hasAttribute("hidden")) { sol.removeAttribute("hidden"); btn.textContent = "Ocultar"; }
+      else { sol.setAttribute("hidden", ""); btn.textContent = btn.getAttribute("data-lab") || "Mostrar"; }
+    });
+    btn.setAttribute("data-lab", btn.textContent);
+  });
+
+  /* ---------------- navegação (documento) ---------------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll("#toc a"));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute("href")); });
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      if (isPresent()) return;
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        var i = secs.indexOf(e.target);
+        links.forEach(function (a, j) { a.classList.toggle("on", j === i); });
+      });
+    }, { rootMargin: "-15% 0px -75% 0px" });
+    secs.forEach(function (s) { if (s) io.observe(s); });
+  }
+
+  /* ============================================================
+     MODO APRESENTAÇÃO
+     ============================================================ */
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var cur = 0;
+  var hudWhere = $("hudWhere"), hudCount = $("hudCount");
+  var hudBar = $("hudBar"), hudZoom = $("hudZoom");
+
+  function isPresent() { return root.getAttribute("data-mode") === "present"; }
+
+  var ps = 1;
+  try {
+    var saved = parseFloat(localStorage.getItem("ppgi071-ps"));
+    if (isFinite(saved) && saved >= .6 && saved <= 2.2) ps = saved;
+  } catch (e) {}
+
+  function applyPs() {
+    root.style.setProperty("--ps", String(ps));
+    hudZoom.textContent = Math.round(ps * 100) + "%";
+    try { localStorage.setItem("ppgi071-ps", String(ps)); } catch (e) {}
+    redrawAll();
+  }
+  function bumpPs(d) { ps = Math.min(2.2, Math.max(.6, Math.round((ps + d) * 100) / 100)); applyPs(); }
+
+  $("hudZoomIn").addEventListener("click", function () { bumpPs(.1); });
+  $("hudZoomOut").addEventListener("click", function () { bumpPs(-.1); });
+
+  function show(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (s, j) { s.classList.toggle("on", j === cur); });
+    hudWhere.innerHTML = "<b>" + (slides[cur].getAttribute("data-sec") || "") + "</b>";
+    hudCount.textContent = (cur + 1) + " / " + slides.length;
+    hudBar.style.width = (((cur + 1) / slides.length) * 100) + "%";
+    slides[cur].scrollTop = 0;
+    redrawAll();
+  }
+
+  function enterPresent() {
+    var best = 0, bestD = Infinity, mid = window.scrollY + window.innerHeight / 3;
+    slides.forEach(function (s, j) {
+      var el = s.firstElementChild;
+      if (!el) return;
+      var d = Math.abs(el.getBoundingClientRect().top + window.scrollY - mid);
+      if (d < bestD) { bestD = d; best = j; }
+    });
+    root.setAttribute("data-mode", "present");
+    if (root.requestFullscreen) root.requestFullscreen().catch(function () {});
+    applyPs();
+    show(best);
+  }
+
+  function exitPresent() {
+    root.removeAttribute("data-mode");
+    slides.forEach(function (s) { s.classList.remove("on"); });
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    var el = slides[cur] && slides[cur].firstElementChild;
+    if (el) el.scrollIntoView({ block: "center" });
+    redrawAll();
+  }
+
+  $("presentBtn").addEventListener("click", enterPresent);
+  $("hudExit").addEventListener("click", exitPresent);
+  $("hudNext").addEventListener("click", function () { show(cur + 1); });
+  $("hudPrev").addEventListener("click", function () { show(cur - 1); });
+
+  document.addEventListener("fullscreenchange", function () {
+    if (!document.fullscreenElement && isPresent()) exitPresent();
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.target.tagName === "INPUT") return;
+    if (!isPresent()) {
+      if (ev.key === "p" || ev.key === "P") { ev.preventDefault(); enterPresent(); }
+      return;
+    }
+    switch (ev.key) {
+      case "ArrowRight": case "PageDown": case " ": case "Enter":
+        ev.preventDefault(); show(cur + 1); break;
+      case "ArrowLeft": case "PageUp":
+        ev.preventDefault(); show(cur - 1); break;
+      case "Home": ev.preventDefault(); show(0); break;
+      case "End": ev.preventDefault(); show(slides.length - 1); break;
+      case "+": case "=": ev.preventDefault(); bumpPs(.1); break;
+      case "-": case "_": ev.preventDefault(); bumpPs(-.1); break;
+      case "0": ev.preventDefault(); ps = 1; applyPs(); break;
+      case "Escape": exitPresent(); break;
+    }
+  });
+
+  /* ---------------- redraw ---------------- */
+  function redrawAll() { drawHero(); drawMaq(); drawPes(); drawBan(); drawNS(); drawBon(); drawCmp(); }
+  window.addEventListener("resize", redrawAll);
+
+  hudZoom.textContent = Math.round(ps * 100) + "%";
+  maqNovo();
+  bonReset();
+  updPes();
+  redrawAll();
+  if (!reduce) requestAnimationFrame(heroTick);
+})();
+</script>
