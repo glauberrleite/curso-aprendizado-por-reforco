@@ -255,6 +255,7 @@ blockquote cite {
   display: inline-flex; flex-direction: column; vertical-align: middle;
   text-align: center; margin: 0 .18em;
 }
+.frac > span { align-self: stretch; }          /* barra na largura do maior termo */
 .frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 .4em .12em; }
 .frac > span:last-child { padding: .12em .4em 0; }
 .sum { font-size: 1.35em; vertical-align: -0.22em; line-height: .8; margin-right: .12em; }
@@ -533,6 +534,21 @@ figcaption { font-family: var(--sans); font-size: .78rem; color: var(--ink-mute)
 
 html { scroll-behavior: smooth; }
 
+/* ---------- somatório e raiz ---------- */
+
+.somat {
+  display: inline-flex; flex-direction: column; align-items: center;
+  vertical-align: middle; line-height: 1; margin: 0 .3em 0 .1em; font-style: normal;
+}
+.somat .lim { font-size: .52em; line-height: 1.25; white-space: nowrap; }
+.somat .sig { font-size: 1.5em; line-height: 1; }
+
+/* O radical e um SVG que estica junto com o radicando: com o glifo √ a ponta
+   nunca encontra a barra de cima quando ha uma fracao embaixo. */
+.raiz { display: inline-flex; align-items: stretch; vertical-align: middle; margin: 0 .12em; }
+.raiz .rad { width: .62em; flex: none; overflow: visible; }
+.raiz .sob { border-top: 1.2px solid currentColor; padding: .16em .3em 0 .14em; }
+
 /* ---------- pseudocódigo ---------- */
 
 .pseudo {
@@ -711,7 +727,11 @@ html { scroll-behavior: smooth; }
           <div class="eq">
             <span class="op-age"><span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)</span>
             &nbsp;=&nbsp;
-            <span class="sum">∑</span><sub style="font-size:.7em">i=1</sub><sup style="font-size:.7em">N<sub>t</sub>(a)</sup>
+            <span class="somat">
+              <span class="lim"><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
+              <span class="sig">∑</span>
+              <span class="lim"><span class="v">i</span> = 1</span>
+            </span>
             <span class="frac">
               <span><span class="op-rec"><span class="v">R</span><sub>i</sub></span></span>
               <span><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
@@ -861,12 +881,11 @@ html { scroll-behavior: smooth; }
     <b>FIMSE</b>
     R ← bandit(A)
     N(A) ← N(A) + 1
-    <u>Q(A) ← média(Q(A))</u></div>
-          <div class="note problema">
-            <span class="lab">O problema da última linha</span>
-            <p>Calcular <code>média(Q(A))</code> assim exige guardar <strong>todas</strong> as
-            recompensas de cada ação, indefinidamente. Memória cresce sem limite e o custo por
-            passo cresce junto. Resolvemos isso no § 05 — antes de rodar qualquer coisa.</p>
+    Q(A) ← média(Q(A))</div>
+          <div class="note">
+            <span class="lab">Antes de sair implementando</span>
+            <p>Imagine esse laço rodando por horas, como está escrito aí. Alguém enxerga
+            algum <strong>problema de implementação</strong>?</p>
           </div>
         </div>
 
@@ -963,10 +982,18 @@ html { scroll-behavior: smooth; }
             <h2>A média sem guardar nada</h2>
             <span class="sub">Um pouco de recursividade resolve o problema de memória</span>
           </div>
+          <p>Ao pé da letra, o <code>média(Q(A))</code> do § 04 exige guardar <strong>todas</strong>
+          as recompensas de cada ação, indefinidamente: a memória cresce sem limite e o custo de
+          cada passo cresce junto. Mas a média de <span class="v">k</span> valores pode ser escrita
+          a partir da média de <span class="v">k</span>−1:</p>
           <div class="eq">
             <span class="op-age"><span class="v">Q</span><sub>k+1</sub></span> =
             <span class="frac"><span>1</span><span><span class="v">k</span></span></span>
-            <span class="sum">∑</span><sub style="font-size:.7em">i=1</sub><sup style="font-size:.7em">k</sup>
+            <span class="somat">
+              <span class="lim"><span class="v">k</span></span>
+              <span class="sig">∑</span>
+              <span class="lim"><span class="v">i</span> = 1</span>
+            </span>
             <span class="op-rec"><span class="v">R</span><sub>i</sub></span>
             &nbsp;=&nbsp;
             <span class="op-age"><span class="v">Q</span><sub>k</sub></span> +
@@ -1256,11 +1283,21 @@ html { scroll-behavior: smooth; }
             <span class="op-age"><span class="v">A</span><sub>t</sub></span> =
             arg max<sub style="font-size:.75em"><span class="v">a</span> ∈ 𝒜</sub>
             [ <span class="op-age"><span class="v">Q</span><sub>t</sub>(<span class="v">a</span>)</span> +
-            <span class="v">c</span> √<span style="border-top:1px solid currentColor; padding:0 .25em">
-              <span class="frac" style="vertical-align:-0.15em">
-                <span>ln <span class="v">t</span></span>
-                <span><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
-              </span></span> ]
+            <span class="v">c</span>
+            <span class="raiz">
+              <svg class="rad" viewBox="0 0 10 24" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 15.5 H2.2 L4.4 22.8 L9.4 0.6 H10" fill="none"
+                      stroke="currentColor" stroke-width="1.2"
+                      vector-effect="non-scaling-stroke"
+                      stroke-linejoin="round" stroke-linecap="round"></path>
+              </svg>
+              <span class="sob">
+                <span class="frac">
+                  <span>ln <span class="v">t</span></span>
+                  <span><span class="v">N</span><sub>t</sub>(<span class="v">a</span>)</span>
+                </span>
+              </span>
+            </span> ]
             <small><span class="v">c</span> &gt; 0 controla o grau de exploração; se <span class="v">N</span><sub>t</sub>(<span class="v">a</span>) = 0, <span class="v">a</span> é considerada maximizadora</small>
           </div>
         </div>
