@@ -45,7 +45,7 @@ REPITA, para sempre:
     FIMSE
     R ← bandit(A)
     N(A) ← N(A) + 1
-    Q(A) ← média(Q(A))
+    Q(A) ← média(Q(A), R)
 ```
 
 Um problema que precisamos resolver logo, antes de tentar rodar, é o da média(Q(A)), pois precisamos guardar todos os valores de recompensa de uma determinada ação, indefinidamente.
