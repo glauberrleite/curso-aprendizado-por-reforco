@@ -59,7 +59,7 @@ Não é a fronteira física. A regra é: **tudo o que o agente não controla arb
 
 Este é o ponto que mais gera confusão, e vale separar com cuidado.
 
-**Hipótese da recompensa**: tudo o que entendemos por objetivo pode ser bem representado como a maximização do valor esperado da soma acumulada de um sinal escalar de recompensa. É uma hipótese, não um teorema — e aceitá-la é o que define o campo.
+**Hipótese da recompensa**: tudo o que entendemos por objetivo pode ser bem representado como a maximização do valor esperado da soma acumulada de um sinal escalar de recompensa. É uma hipótese, não um teorema.
 
 O que se maximiza não é a recompensa imediata, é o **retorno**:
 
@@ -150,4 +150,6 @@ Originalmente, muitas APIs eram baseadas na *OpenAI Gym library*, que não é ma
 
 ---
 
-Material de apoio desta aula: [slides interativos](./aula.html) · [guia de condução](./guia-aula.md) · [scripts](./scripts/)
+# Próxima aula
+
+Começaremos a trabalhar com métodos tabulares. Para isso, vamos considerar, nesse início, problemas que tem espaços de estados e de ação pequenos o bastante tal que a função ação-valor aproximada possa ser representada por um *array*, ou uma tabela.
