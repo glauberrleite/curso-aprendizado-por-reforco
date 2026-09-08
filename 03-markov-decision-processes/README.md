@@ -59,7 +59,7 @@ flowchart LR
 
 > Definição (Howard Anton): Se uma cadeia de Markov tiver $k$ estados possíveis, que identificamos por $1,2,\dots,k$, então a probabilidade de o sistema estar no estado $i$ em qualquer observação se na observação imediatamente precedente estava no estado $j$, é denotada por $p_{ij}$ e é denominada **probabilidade de transição** do estado $j$ ao estado $i$. A matriz $P = [p_{ij}]$ é denominada **matriz de transição** da cadeia de Markov.
 
-❗️No livro de Deep Reinforcement Learning, o autor usa uma notação levemente diferente, sendo a transposta! "A matriz de transição, que é uma matriz quadrada $N \times N$, em que $N$ é o número de estados do nosso modelo. Toda célula representa a probabilidade do sistema transitar do estado $i$ (linha) para o estado $j$ (coluna).". Além disso, a matriz de transição é denominada $T$.
+❗️No livro de Deep Reinforcement Learning, o autor usa uma notação levemente diferente, sendo a transposta! "A matriz de transição, que é uma matriz quadrada $N \times N$, em que $N = | \mathcal{S} |$ é o número de estados do nosso modelo. Toda célula representa a probabilidade do sistema transitar do estado $i$ (linha) para o estado $j$ (coluna).". Além disso, a matriz de transição é denominada $T$.
 
 > Definição (Howard Anton): O vetor estado de uma observação de uma cadeia de Markov com $k$ estados é um vetor coluna $x$ cujo $i$-ésimo componente $x_i$ é a probabilidade do sistema estar, naquela observação, no $i$-ésimo estado.
 
@@ -180,10 +180,47 @@ stateDiagram-v2
     Computer --> Computer: p = 0.5, r = 5
 ```
 
-Com isso podemos usar a média ponderada pelas probabilidades para calcular o $v(s)$ de cada estado.
+Considerando o imediatismo de $\gamma = 0$, podemos usar a média ponderada pelas probabilidades para calcular o $v(s)$ de cada estado.
+Qual é o estado mais valorizado entre as opções, neste caso?
+
+Já no caso $\gamma = 1$, como não temos sumidouros (*sink states*), todos os estados tem valor infinito. Por isso $0 < \gamma < 1$ nos dá um horizonte prático.
 
 # Processo de Decisão de Markov
 
+Vamos agora considerar o conjunto de ações $\mathcal{A}$. Assim, nossa matriz de transição terá mais uma dimensão, assumindo um formato "cubóide" $|\mathcal{S}| \times |\mathcal{S}| \times |\mathcal{A}|$.
 
+Nosso agente não apenas observa transições de estados, mas também escolhe ações que afetam as probabilidades de transição.
 
-#
+O formato do cubóide será estado origem pela altura $i$, estado objetivo pela largura $j$ e ação do agente pela profundidade $k$. Cada célula terá uma probabilidade.
+
+💡Ações geralmente afetam probabilidades de transição de estados, ao invés de alterar deterministicamente o estado para considerar situações realistas, como imperfeições do sistema, instrumentação, deslizamento de rodas de motor de um robô... 
+
+> In Figure 1.10, a small part of a transition diagram is shown, displaying the possible transitions from the state  (1, 1), up, when the robot is in the center of the grid and facing up. If the robot tries to move forward, there  is a 90% chance that it will end up in the state (0, 1), up, but there is a 10% probability that the wheels will slip and the target position will remain (1, 1), up.
+> ![mdp_example](media/mdp_example.png)
+
+Além disso, vamos fazer o mesmo procedimento com a recompensa, que será em uma matriz no formato cubóide também, de dimensões $|\mathcal{S}| \times |\mathcal{S}| \times |\mathcal{A}|$.
+
+📚(Sutton) A propriedade de Markov vai aparecer no laço que descreve a dinâmica:
+
+$$P(R_{t-1} = r, S_{t+1} = s' | S_0, A_0, R_1, \dots, S_{t-1}, A_{t-1}, R_t, S_t, A_t) = P(R_{t-1} = r, S_{t+1} = s' | S_t, A_t)$$
+
+Com essa base, podemos introduzir o conceito mais importante de MDP para RL, política (_policy_).
+
+## Política
+
+> The simple definition of policy is that it is some set of rules that defines the agent’s behavior.
+
+Políticas diferentes podem prover quantidades diferentes de retorno, sendo que a otimização do retorno é o grande objetivo de RL.
+
+Formalmente, a política é definida pela distribuição de probabilidade sob as ações de todo estado possível:
+
+$$\pi(a | s) = P[A_t = a | S_t = s]$$
+
+Como chegamos a ver rapidamente na introdução, a política afeta a computação das funções valor-estado e valor-ação:
+
+$$ v_\pi(s) = \mathbb{E}_\pi[G_t \mid S_t = s] \qquad q_\pi(s,a) = \mathbb{E}_\pi[G_t \mid S_t = s, A_t = a] $$
+
+📚(Sutton) A fundamental property of value functions used throughout reinforcement learning and dynamic programming is that they satisfy particular recursive relationships. For any policy π and any state s, the following consistency condition holds between the value of s and the value of its possible successor states:
+$$v_\pi(s) = \mathbb{E}_\pi[G_t \mid S_t = s] = \sum_{a} \pi(a | s) \sum_{s',r} p(s',r|s,a) [r + \gamma v_\pi(s')]$$
+
+Essa equação é conhecida como Equação de Bellman para $v_\pi$. Ela representa a relação entre o valor do estado e os valores dos estados sucessores.
